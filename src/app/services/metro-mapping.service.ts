@@ -280,31 +280,79 @@ export class MetroMappingService {
         : this.isStationOccupied(station.point, occupied);
       if (!collides) return;
 
-      const direction = orientation === 'horizontal'
-        ? { x: Math.sign(station.point.x - previous.point.x) || 1, y: 0 }
-        : { x: 0, y: Math.sign(station.point.y - previous.point.y) || 1 };
-      const alternatives = orientation === 'horizontal'
-        ? [
-            { x: -direction.x * distance, y: 0 },
-            { x: 0, y: -distance },
-            { x: 0, y: distance },
-          ]
-        : [
-            { x: distance, y: direction.y * distance },
-            { x: -distance, y: direction.y * distance },
-            { x: distance, y: 0 },
-            { x: -distance, y: 0 },
-            { x: 0, y: -direction.y * distance },
-          ];
-      const replacement = alternatives
-        .map((delta) => ({
-          x: previous.point.x + delta.x,
-          y: previous.point.y + delta.y,
+      const preferredDirection = this.directionBetween(previous.point, station.point);
+      const diagonalDistance = Math.round(distance / Math.SQRT2);
+      const candidates = [
+        { x: distance, y: 0 },
+        { x: diagonalDistance, y: diagonalDistance },
+        { x: 0, y: distance },
+        { x: -diagonalDistance, y: diagonalDistance },
+        { x: -distance, y: 0 },
+        { x: -diagonalDistance, y: -diagonalDistance },
+        { x: 0, y: -distance },
+        { x: diagonalDistance, y: -diagonalDistance },
+      ]
+        .map((direction) => ({
+          x: previous.point.x + direction.x,
+          y: previous.point.y + direction.y,
         }))
-        .find((candidate) => !this.isPointOccupied(candidate, occupied));
+        .filter((candidate) => !this.isPointOccupied(candidate, occupied));
+      const next = stations[index + 1]?.point;
+      const replacement = candidates.reduce<Point | undefined>((best, candidate) => {
+        if (!best) return candidate;
+        return this.stationLayoutEnergy(
+          candidate,
+          station.point,
+          previous.point,
+          next,
+          occupied,
+          distance,
+        ) < this.stationLayoutEnergy(
+          best,
+          station.point,
+          previous.point,
+          next,
+          occupied,
+          distance,
+        )
+          ? candidate
+          : best;
+      }, undefined);
 
       if (replacement) station.point = replacement;
     });
+  }
+
+  private stationLayoutEnergy(
+    candidate: Point,
+    preferred: Point,
+    previous: Point,
+    next: Point | undefined,
+    occupiedLines: Array<Array<{ name: string; point: Point }>>,
+    idealLength: number,
+  ): number {
+    const neighbors = [previous, next].filter((point): point is Point => !!point);
+    const edgeStress = neighbors.reduce((stress, neighbor) => {
+      const length = Math.hypot(candidate.x - neighbor.x, candidate.y - neighbor.y);
+      return stress + (length - idealLength) ** 2;
+    }, 0);
+
+    const intendedDirection = this.directionBetween(previous, preferred);
+    const candidateDirection = this.directionBetween(previous, candidate);
+    const alignment = intendedDirection.x * candidateDirection.x +
+      intendedDirection.y * candidateDirection.y;
+    const directionalStress = idealLength ** 2 * (1 - alignment) ** 2;
+    const repulsion = occupiedLines.reduce((stress, line) =>
+      stress + line.reduce((lineStress, station) => {
+        const distance = Math.hypot(
+          candidate.x - station.point.x,
+          candidate.y - station.point.y,
+        );
+        return lineStress + idealLength ** 4 / Math.max(distance, 1) ** 2;
+      }, 0),
+    0);
+
+    return edgeStress + directionalStress + repulsion;
   }
 
   private isStationOccupied(
