@@ -27,7 +27,7 @@ Hoogezand Sappemeer
 Zuidbroek
 Veendam
 
-ZuidHorn
+Zuidhorn
 Groningen
 Kropswolde
 Martenshoek
