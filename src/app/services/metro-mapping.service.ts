@@ -333,18 +333,17 @@ export class MetroMappingService {
           tangentY /= tangentLength;
         }
 
-        let normalX = -tangentY;
-        let normalY = tangentX;
-        const labelDirection = line.orientation === 'horizontal'
-          ? { x: 0, y: -1 }
-          : { x: 1, y: 0 };
-        const oppositeNormalDot =
-          -normalX * labelDirection.x - normalY * labelDirection.y;
-        const normalDot =
-          normalX * labelDirection.x + normalY * labelDirection.y;
-        if (oppositeNormalDot > normalDot) {
-          normalX *= -1;
-          normalY *= -1;
+        let normalX: number;
+        let normalY: number;
+        if (Math.abs(tangentX) >= 0.99 && Math.abs(tangentY) < 0.01) {
+          normalX = 0;
+          normalY = -1;
+        } else if (Math.abs(tangentY) >= 0.99 && Math.abs(tangentX) < 0.01) {
+          normalX = 1;
+          normalY = 0;
+        } else {
+          normalX = tangentX >= 0 ? 1 : -1;
+          normalY = tangentY >= 0 ? -1 : -1;
         }
 
         if (station.terminus) {
@@ -355,6 +354,7 @@ export class MetroMappingService {
             y2: station.y + normalY * 12,
           };
         } else {
+          const labelDirection = { x: 0, y: -1 };
           const labelSideNormalDot =
             normalX * labelDirection.x + normalY * labelDirection.y;
           const signedNormalX =
