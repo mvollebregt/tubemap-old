@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { MetroLayout } from '../models/metro-layout.interface';
 import { MetroLineLayout } from '../models/metro-line-layout.interface';
 import { PlacedStation } from '../models/placed-station.interface';
+import { StationTick } from '../models/station-tick.interface';
 import { TransferStation } from '../models/transfer-station.interface';
 
 interface TextBox {
@@ -151,8 +152,17 @@ export class MetroMappingService {
       horizontalStations.forEach((station) => {
         station.y = horizontalLaneY;
         station.tick = sharedNames.includes(station.name)
-          ? { x1: station.x, y1: station.y - 12, x2: station.x, y2: station.y }
-          : station.tick;
+          ? this.horizontalStationTick(station.x, station.y, boundaryNames.includes(station.name))
+          : this.horizontalStationTick(station.x, station.y, station.terminus);
+      });
+      verticalStations.forEach((station) => {
+        const shared = sharedNames.includes(station.name);
+        station.tick = this.verticalStationTick(
+          station.x,
+          station.y,
+          station.terminus,
+          shared,
+        );
       });
 
       firstLine.sharedStationNames = sharedNames;
@@ -234,6 +244,16 @@ export class MetroMappingService {
     };
   }
 
+  private horizontalStationTick(
+    x: number,
+    y: number,
+    terminal: boolean,
+  ): StationTick {
+    return terminal
+      ? { x1: x, y1: y - 12, x2: x, y2: y + 12 }
+      : { x1: x, y1: y - 12, x2: x, y2: y };
+  }
+
   private placeVerticalStation(
     name: string,
     index: number,
@@ -258,6 +278,20 @@ export class MetroMappingService {
         anchor: 'start',
       },
     };
+  }
+
+  private verticalStationTick(
+    x: number,
+    y: number,
+    terminal: boolean,
+    shared: boolean,
+  ): StationTick {
+    if (shared) {
+      return { x1: x, y1: y, x2: x + 12, y2: y };
+    }
+    return terminal
+      ? { x1: x - 12, y1: y, x2: x + 12, y2: y }
+      : { x1: x, y1: y, x2: x + 12, y2: y };
   }
 
   private findTransferLabel(x: number, y: number) {

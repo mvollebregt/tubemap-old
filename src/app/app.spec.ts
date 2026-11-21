@@ -299,4 +299,50 @@ describe('App', () => {
     expect(horizontal.y).toBe(155);
     expect(vertical.y).toBe(155);
   });
+
+  it('should draw both colored ticks at a shared non-transfer station', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C', 'D'],
+        ['Top', 'B', 'C', 'D'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    const horizontal = layout.lines[0].stations.find((station) => station.name === 'C')!;
+    const vertical = layout.lines[1].stations.find((station) => station.name === 'C')!;
+
+    expect(horizontal.tick.x1).toBe(horizontal.x);
+    expect(horizontal.tick.x2).toBe(horizontal.x);
+    expect(vertical.tick.y1).toBe(vertical.y);
+    expect(vertical.tick.y2).toBe(vertical.y);
+  });
+
+  it('should center horizontal and vertical terminal ticks on the final lane', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C'],
+        ['Top', 'B', 'Bottom'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    const horizontalFirst = layout.lines[0].stations[0];
+    const horizontalLast = layout.lines[0].stations.at(-1)!;
+    expect(horizontalFirst.tick.y1).toBeLessThan(horizontalFirst.y);
+    expect(horizontalFirst.tick.y2).toBeGreaterThan(horizontalFirst.y);
+    expect(horizontalLast.tick.y1).toBeLessThan(horizontalLast.y);
+    expect(horizontalLast.tick.y2).toBeGreaterThan(horizontalLast.y);
+
+    const verticalFirst = layout.lines[1].stations[0];
+    const verticalLast = layout.lines[1].stations.at(-1)!;
+    expect(verticalFirst.tick.x1).toBeLessThan(verticalFirst.x);
+    expect(verticalFirst.tick.x2).toBeGreaterThan(verticalFirst.x);
+    expect(verticalLast.tick.x1).toBeLessThan(verticalLast.x);
+    expect(verticalLast.tick.x2).toBeGreaterThan(verticalLast.x);
+  });
 });
