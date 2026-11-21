@@ -19,7 +19,7 @@ interface OverlapRun {
 
 @Injectable({ providedIn: 'root' })
 export class MetroMappingService {
-  private readonly lineY = 160;
+  private readonly lineY = 155;
   private readonly labelYOffset = 34;
   private readonly stationSpacing = 72;
 
@@ -88,23 +88,56 @@ export class MetroMappingService {
             index,
             secondNames.length,
             horizontal.x,
-            this.lineY + 6,
+            this.lineY + 10,
+            true,
+          );
+        }
+        const firstRun = overlapRuns[0];
+        const lastRun = overlapRuns[overlapRuns.length - 1];
+        const firstSharedIndex = firstRun?.verticalIndices[0];
+        const lastSharedIndex = lastRun?.verticalIndices[lastRun.verticalIndices.length - 1];
+        const firstSharedName = firstRun?.names[0];
+        const lastSharedName = lastRun?.names[lastRun.names.length - 1];
+        const firstSharedHorizontal = horizontalStations.find(
+          (station) => station.name === firstSharedName,
+        );
+        const lastSharedHorizontal = horizontalStations.find(
+          (station) => station.name === lastSharedName,
+        );
+
+        if (firstSharedIndex !== undefined && index < firstSharedIndex) {
+          return this.placeVerticalStation(
+            name,
+            index,
+            secondNames.length,
+            firstSharedHorizontal?.x ?? verticalX,
+            this.lineY + 10 - (firstSharedIndex - index) * 72,
+            false,
+          );
+        }
+        if (lastSharedIndex !== undefined && index > lastSharedIndex) {
+          return this.placeVerticalStation(
+            name,
+            index,
+            secondNames.length,
+            lastSharedHorizontal?.x ?? verticalX,
+            this.lineY + 10 + (index - lastSharedIndex) * 72,
+            false,
           );
         }
 
-        let y = this.lineY + (index - sharedIndex) * 72;
-        if (sharedIndex < 0) y = this.lineY + 240 + index * 72;
         return this.placeVerticalStation(
           name,
           index,
           secondNames.length,
           verticalX,
-          y,
+          this.lineY + 10 + (index - (firstSharedIndex ?? index)) * 72,
+          false,
         );
       });
 
       horizontalStations.forEach((station) => {
-        station.y = sharedNames.includes(station.name) ? this.lineY - 6 : this.lineY;
+        station.y = this.lineY;
         station.tick = sharedNames.includes(station.name)
           ? { x1: station.x, y1: station.y - 12, x2: station.x, y2: station.y }
           : station.tick;
@@ -140,8 +173,8 @@ export class MetroMappingService {
           transfers.push({
             name: horizontalStation.name,
             x: verticalStation.x,
-            y: this.lineY,
-            label: this.findTransferLabel(verticalStation.x, this.lineY),
+            y: this.lineY + 5,
+            label: this.findTransferLabel(verticalStation.x, this.lineY + 5),
           });
         }
       });
@@ -195,6 +228,7 @@ export class MetroMappingService {
     stationCount: number,
     x: number,
     y: number,
+    shared = false,
   ): PlacedStation {
     const terminal = index === 0 || index === stationCount - 1;
     return {
@@ -202,9 +236,11 @@ export class MetroMappingService {
       x,
       y,
       terminus: terminal,
-      tick: terminal
-        ? { x1: x - 12, y1: y, x2: x + 12, y2: y }
-        : { x1: x, y1: y, x2: x + 12, y2: y },
+      tick: shared
+        ? { x1: x, y1: y, x2: x + 12, y2: y }
+        : terminal
+          ? { x1: x - 12, y1: y, x2: x + 12, y2: y }
+          : { x1: x, y1: y, x2: x + 12, y2: y },
       label: {
         transform: `translate(${this.format(x + 18)} ${this.format(y - 5)})`,
         anchor: 'start',
@@ -266,11 +302,13 @@ export class MetroMappingService {
 
   private buildHorizontalParallelPath(stations: PlacedStation[]): string {
     if (stations.length === 0) return '';
-    return stations
-      .map((station, index) =>
-        `${index === 0 ? 'M' : 'L'} ${this.format(station.x)} ${this.format(station.y)}`,
-      )
-      .join(' ');
+    let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
+    for (let index = 1; index < stations.length; index++) {
+      const previous = stations[index - 1];
+      const station = stations[index];
+      path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
+    }
+    return path;
   }
 
   private buildVerticalPath(
@@ -287,19 +325,10 @@ export class MetroMappingService {
     stations.forEach((station, index) => {
       if (index === 0) return;
       const previous = stations[index - 1];
-      const previousShared = sharedNames.has(previous.name);
-      const currentShared = sharedNames.has(station.name);
-
-      if (previousShared && currentShared) {
-        path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
-      } else if (!previousShared && currentShared) {
-        path += ` L ${this.format(previous.x)} ${this.format(this.lineY + 6)}`;
-        path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
-      } else if (previousShared && !currentShared) {
-        path += ` L ${this.format(previous.x)} ${this.format(this.lineY + 6)}`;
+      if (sharedNames.has(previous.name) && sharedNames.has(station.name)) {
         path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
       } else {
-        path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
+        path += this.normalizedSegment(previous, station);
       }
     });
 
@@ -431,5 +460,20 @@ export class MetroMappingService {
 
   private format(value: number): string {
     return value.toFixed(2);
+  }
+
+  private normalizedSegment(from: { x: number; y: number }, to: { x: number; y: number }): string {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (dx === 0 || dy === 0) {
+      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    if (Math.abs(dx) === Math.abs(dy)) {
+      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return ` L ${this.format(to.x)} ${this.format(from.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    return ` L ${this.format(from.x)} ${this.format(to.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
   }
 }

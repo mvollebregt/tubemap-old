@@ -11,23 +11,46 @@
           stroke-linejoin="round"
         />
         @for (station of line.stations; track $index) {
-          @if (!isTransfer(station.name) && (!isShared(station.name) || line.orientation === 'horizontal')) {
-            <line
-              [attr.x1]="station.tick.x1"
-              [attr.y1]="station.tick.y1"
-              [attr.x2]="station.tick.x2"
-              [attr.y2]="station.tick.y2"
-              [attr.stroke]="line.color"
-              stroke-width="5"
-              stroke-linecap="butt"
-            />
-            <text
-              [attr.transform]="station.label.transform"
-              [attr.text-anchor]="station.label.anchor"
-              [attr.font-weight]="station.terminus ? 700 : 600"
-            >
-              {{ station.name }}
-            </text>
+          @if (!isTransfer(station.name)) {
+            @if (isShared(station.name)) {
+              @if (line.orientation === 'horizontal' || line.orientation === 'vertical') {
+                <line
+                  [attr.x1]="station.tick.x1"
+                  [attr.y1]="station.tick.y1"
+                  [attr.x2]="station.tick.x2"
+                  [attr.y2]="station.tick.y2"
+                  [attr.stroke]="line.color"
+                  stroke-width="5"
+                  stroke-linecap="butt"
+                />
+              }
+              @if (line.orientation === 'horizontal') {
+                <text
+                  [attr.transform]="station.label.transform"
+                  [attr.text-anchor]="station.label.anchor"
+                  [attr.font-weight]="600"
+                >
+                  {{ station.name }}
+                </text>
+              }
+            } @else {
+              <line
+                [attr.x1]="station.tick.x1"
+                [attr.y1]="station.tick.y1"
+                [attr.x2]="station.tick.x2"
+                [attr.y2]="station.tick.y2"
+                [attr.stroke]="line.color"
+                stroke-width="5"
+                stroke-linecap="butt"
+              />
+              <text
+                [attr.transform]="station.label.transform"
+                [attr.text-anchor]="station.label.anchor"
+                [attr.font-weight]="station.terminus ? 700 : 600"
+              >
+                {{ station.name }}
+              </text>
+            }
           }
         }
       }
