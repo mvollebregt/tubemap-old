@@ -25,7 +25,15 @@ Assen
 Beilen
 Hoogeveen
 Meppel
-Zwolle`;
+Zwolle
+
+Amsterdam Centraal
+Schiphol
+Leiden
+Den Haag Centraal
+Gouda
+Utrecht Centraal
+Amersfoort`;
 
 @Component({
   selector: 'app-root',
@@ -39,11 +47,20 @@ export class App {
   readonly lines = LINES;
   readonly text = signal(VOORBEELD);
   readonly lineColor = signal(LINES[0].color);
-  readonly stations = computed(() =>
+  readonly stationLines = computed(() =>
     this.text()
-      .split(/\r?\n/)
-      .map((station) => station.trim())
-      .filter((station) => station.length > 0),
+      .split(/\r?\n[^\S\r\n]*\r?\n/)
+      .map((block) =>
+        block
+          .split(/\r?\n/)
+          .map((station) => station.trim())
+          .filter((station) => station.length > 0),
+      )
+      .filter((stations) => stations.length > 0),
   );
-  readonly map = computed(() => this.mapping.layout(this.stations()));
+  readonly map = computed(() => {
+    const selectedIndex = LINES.findIndex((line) => line.color === this.lineColor());
+    const secondLine = LINES[(selectedIndex + 1) % LINES.length];
+    return this.mapping.layout(this.stationLines(), this.lineColor(), secondLine.color);
+  });
 }
