@@ -4,8 +4,8 @@ import { PlacedStation } from '../models/placed-station.interface';
 
 @Injectable({ providedIn: 'root' })
 export class MetroMappingService {
-  private readonly lineY = 220;
-  private readonly labelYOffset = 48;
+  private readonly lineY = 160;
+  private readonly labelYOffset = 34;
 
   layout(names: string[]): MetroLayout {
     const stations = names
@@ -17,15 +17,16 @@ export class MetroMappingService {
     }
 
     const stationSpacing = Math.max(
-      96,
-      ...stations.map((name) => name.length * 9 + 32),
+      72,
+      ...stations.map((name) => name.length * 8 + 24),
     );
     const placedStations = stations.map((name, index) =>
       this.placeStation(name, index, stations.length, stationSpacing),
     );
+    const firstX = 0;
     const lastX = (stations.length - 1) * stationSpacing;
-    const path = `M 0 ${this.lineY} L ${this.format(lastX)} ${this.lineY}`;
-    const viewBox = `-60 70 ${this.format(lastX + 120)} 300`;
+    const path = `M ${this.format(firstX)} ${this.lineY} L ${this.format(lastX)} ${this.lineY}`;
+    const viewBox = `-60 55 ${this.format(lastX + 120)} 210`;
 
     return { stations: placedStations, path, viewBox };
   }
@@ -37,20 +38,27 @@ export class MetroMappingService {
     stationSpacing: number,
   ): PlacedStation {
     const x = index * stationSpacing;
-    const above = index % 2 === 0;
-    const labelOffset = above ? -this.labelYOffset : this.labelYOffset;
+    const labelOffset = -this.labelYOffset;
+    const tick = index === 0 || index === stationCount - 1
+      ? {
+          x1: x,
+          y1: this.lineY - 12,
+          x2: x,
+          y2: this.lineY + 12,
+        }
+      : {
+          x1: x,
+          y1: this.lineY - 12,
+          x2: x,
+          y2: this.lineY,
+        };
 
     return {
       name,
       x,
       y: this.lineY,
       terminus: index === 0 || index === stationCount - 1,
-      tick: {
-        x1: x,
-        y1: this.lineY - 12,
-        x2: x,
-        y2: this.lineY + 12,
-      },
+      tick,
       label: {
         transform: `translate(${this.format(x)} ${this.format(this.lineY + labelOffset)})`,
         anchor: 'middle',

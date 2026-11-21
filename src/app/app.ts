@@ -5,13 +5,18 @@ import { MetroMappingService } from './services/metro-mapping.service';
 import { MetroLine } from './models/metro-line.interface';
 
 const LINES: readonly MetroLine[] = [
-  { name: 'Central', color: '#DC241F' },
-  { name: 'Piccadilly', color: '#0019A8' },
-  { name: 'Victoria', color: '#00A0E2' },
-  { name: 'District', color: '#007D32' },
-  { name: 'Elizabeth', color: '#6950A1' },
+  { name: 'Bakerloo', color: '#B36305' },
+  { name: 'Central', color: '#E32017' },
+  { name: 'Circle', color: '#FFD300' },
+  { name: 'District', color: '#00782A' },
+  { name: 'Elizabeth', color: '#7156A5' },
+  { name: 'Hammersmith & City', color: '#F3A9BB' },
+  { name: 'Jubilee', color: '#A0A5A9' },
+  { name: 'Metropolitan', color: '#9B0056' },
   { name: 'Northern', color: '#000000' },
-  { name: 'Jubilee', color: '#7B8186' },
+  { name: 'Piccadilly', color: '#003688' },
+  { name: 'Victoria', color: '#0098D4' },
+  { name: 'Waterloo & City', color: '#95CDBA' },
 ];
 
 const VOORBEELD = `Groningen
@@ -20,19 +25,7 @@ Assen
 Beilen
 Hoogeveen
 Meppel
-Zwolle
-Deventer
-Apeldoorn
-Amersfoort
-Utrecht Centraal
-Gouda
-Rotterdam Centraal
-Delft
-Den Haag Centraal
-Leiden
-Schiphol
-Amsterdam Zuid
-Amsterdam Centraal`;
+Zwolle`;
 
 @Component({
   selector: 'app-root',

@@ -18,6 +18,8 @@ svg {
   width: 100%;
   height: 100%;
   fill: #14171f;
+  font-family: 'Johnston100', 'P22 Underground', 'London Underground', 'Gill Sans',
+    'Gill Sans MT', Calibri, sans-serif;
   font-size: 14px;
 }
 

@@ -1,7 +1,8 @@
 :host {
   display: block;
   height: 100vh;
-  font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+  font-family: 'Johnston100', 'P22 Underground', 'London Underground', 'Gill Sans',
+    'Gill Sans MT', Calibri, sans-serif;
 }
 
 .app {
