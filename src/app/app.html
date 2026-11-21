@@ -3,10 +3,8 @@
     [text]="text()"
     [lines]="lines"
     [lineColor]="lineColor()"
-    [perRow]="perRow()"
     (textChange)="text.set($event)"
     (lineColorChange)="lineColor.set($event)"
-    (perRowChange)="setPerRow($event)"
   />
   <app-metro-map [layout]="map()" [lineColor]="lineColor()" />
 </main>

@@ -1,10 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-
-export interface MetroLine {
-  name: string;
-  color: string;
-}
+import { MetroLine } from '../models/metro-line.interface';
 
 @Component({
   selector: 'app-line-editor',
@@ -16,13 +12,7 @@ export class LineEditorComponent {
   readonly text = input.required<string>();
   readonly lines = input.required<readonly MetroLine[]>();
   readonly lineColor = input.required<string>();
-  readonly perRow = input.required<number>();
 
   readonly textChange = output<string>();
   readonly lineColorChange = output<string>();
-  readonly perRowChange = output<number>();
-
-  setPerRow(value: number | string | null): void {
-    this.perRowChange.emit(Number(value) || 6);
-  }
 }

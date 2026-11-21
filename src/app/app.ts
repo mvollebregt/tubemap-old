@@ -1,7 +1,8 @@
-import { Component, computed, signal } from '@angular/core';
-import { layoutMetroLines } from './metro-layout';
-import { LineEditorComponent, MetroLine } from './line-editor/line-editor';
+import { Component, computed, inject, signal } from '@angular/core';
+import { LineEditorComponent } from './line-editor/line-editor';
 import { MetroMapComponent } from './metro-map/metro-map';
+import { MetroMappingService } from './services/metro-mapping.service';
+import { MetroLine } from './models/metro-line.interface';
 
 const LINES: readonly MetroLine[] = [
   { name: 'Central', color: '#DC241F' },
@@ -40,34 +41,16 @@ Amsterdam Centraal`;
   styleUrl: './app.css',
 })
 export class App {
-  readonly lines = LINES;
+  private readonly mapping = inject(MetroMappingService);
 
+  readonly lines = LINES;
   readonly text = signal(VOORBEELD);
   readonly lineColor = signal(LINES[0].color);
-  readonly perRow = signal(6);
-
   readonly stations = computed(() =>
     this.text()
-      .split(/\n[^\S\n]*\n/)
-      .map((block) =>
-        block
-          .split('\n')
-          .map((station) => station.trim())
-          .filter(Boolean),
-      )
-      .filter((line) => line.length > 0),
+      .split(/\r?\n/)
+      .map((station) => station.trim())
+      .filter((station) => station.length > 0),
   );
-
-  readonly map = computed(() => {
-    const lineColors = [
-      this.lineColor(),
-      ...LINES.map((line) => line.color).filter((color) => color !== this.lineColor()),
-    ];
-    return layoutMetroLines(this.stations(), this.perRow(), lineColors);
-  });
-
-  setPerRow(value: number | string | null) {
-    const n = Math.round(Number(value) || 6);
-    this.perRow.set(Math.min(12, Math.max(3, n)));
-  }
+  readonly map = computed(() => this.mapping.layout(this.stations()));
 }

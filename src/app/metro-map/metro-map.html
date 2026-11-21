@@ -1,73 +1,46 @@
 <section class="map" aria-label="Lijnkaart">
-  @if (layout().lines.length) {
+  @if (layout().stations.length) {
     <svg [attr.viewBox]="layout().viewBox" preserveAspectRatio="xMidYMid meet">
-      @for (line of layout().lines; track $index) {
-        <path
-          [attr.d]="line.path"
-          fill="none"
-          [attr.stroke]="line.color"
-          stroke-width="9"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-        @for (station of line.stations; track $index) {
-          @if (!isTransfer(station.name)) {
-            @if (station.terminus) {
-              <circle
-                [attr.cx]="station.x"
-                [attr.cy]="station.y"
-                r="9"
-                fill="#fff"
-                [attr.stroke]="line.color"
-                stroke-width="5"
-              />
-            } @else {
-              <line
-                [attr.x1]="station.tick.x1"
-                [attr.y1]="station.tick.y1"
-                [attr.x2]="station.tick.x2"
-                [attr.y2]="station.tick.y2"
-                [attr.stroke]="line.color"
-                stroke-width="4"
-                stroke-linecap="butt"
-              />
-            }
-            <text
-              [attr.transform]="station.label.transform"
-              [attr.text-anchor]="station.label.anchor"
-              [attr.font-weight]="station.terminus ? 700 : 500"
-            >
-              {{ station.name }}
-            </text>
-          }
+      <path
+        [attr.d]="layout().path"
+        fill="none"
+        [attr.stroke]="lineColor()"
+        stroke-width="10"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+
+      @for (station of layout().stations; track $index) {
+        @if (station.terminus) {
+          <circle
+            [attr.cx]="station.x"
+            [attr.cy]="station.y"
+            r="10"
+            fill="#fff"
+            [attr.stroke]="lineColor()"
+            stroke-width="6"
+          />
+        } @else {
+          <line
+            [attr.x1]="station.tick.x1"
+            [attr.y1]="station.tick.y1"
+            [attr.x2]="station.tick.x2"
+            [attr.y2]="station.tick.y2"
+            [attr.stroke]="lineColor()"
+            stroke-width="5"
+            stroke-linecap="butt"
+          />
         }
-      }
-      @for (transfer of layout().transfers; track transfer.name) {
-        <circle
-          [attr.cx]="transfer.x"
-          [attr.cy]="transfer.y"
-          r="11"
-          fill="#fff"
-          stroke="#14171f"
-          stroke-width="3"
-        />
-        <circle
-          [attr.cx]="transfer.x"
-          [attr.cy]="transfer.y"
-          r="4"
-          [attr.fill]="transfer.lineColors[0]"
-        />
         <text
-          [attr.x]="transfer.x + 14"
-          [attr.y]="transfer.y - 12"
-          text-anchor="start"
-          font-weight="700"
+          [attr.transform]="station.label.transform"
+          [attr.text-anchor]="station.label.anchor"
+          [attr.font-weight]="station.terminus ? 700 : 600"
         >
-          {{ transfer.name }}
+          {{ station.name }}
         </text>
       }
     </svg>
   } @else {
-    <p class="empty">Typ links een paar stationsnamen, dan verschijnt hier je lijn.</p>
+    <p class="empty">Typ een paar stationsnamen, dan verschijnt hier je lijn.</p>
   }
 </section>

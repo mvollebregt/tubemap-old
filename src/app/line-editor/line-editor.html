@@ -1,6 +1,6 @@
 <section class="editor">
   <h1>Stationslijst</h1>
-  <p class="hint">Eén station per regel, in de volgorde van de lijn.</p>
+  <p class="hint">Voer één station per regel in, in de volgorde van de lijn.</p>
 
   <textarea
     spellcheck="false"
@@ -9,24 +9,12 @@
     (ngModelChange)="textChange.emit($event)"
   ></textarea>
 
-  <div class="controls">
-    <label>
-      Lijn
-      <select [ngModel]="lineColor()" (ngModelChange)="lineColorChange.emit($event)">
-        @for (line of lines(); track line.color) {
-          <option [value]="line.color">{{ line.name }}</option>
-        }
-      </select>
-    </label>
-    <label>
-      Stations per rij
-      <input
-        type="number"
-        min="3"
-        max="12"
-        [ngModel]="perRow()"
-        (ngModelChange)="setPerRow($event)"
-      />
-    </label>
-  </div>
+  <label>
+    Lijnkleur
+    <select [ngModel]="lineColor()" (ngModelChange)="lineColorChange.emit($event)">
+      @for (line of lines(); track line.color) {
+        <option [value]="line.color">{{ line.name }}</option>
+      }
+    </select>
+  </label>
 </section>

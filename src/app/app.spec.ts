@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
-import { layoutMetroLines } from './metro-layout';
+import { MetroMappingService } from './services/metro-mapping.service';
 
 describe('App', () => {
   beforeEach(async () => {
@@ -23,19 +23,11 @@ describe('App', () => {
     expect(compiled.querySelector('h1')?.textContent).toContain('Stationslijst');
   });
 
-  it('should merge stations from separate lines into an interchange', () => {
-    const layout = layoutMetroLines(
-      [['A', 'Shared', 'B'], ['C', 'Shared', 'D']],
-      6,
-      ['#ff0000', '#0000ff'],
-    );
+  it('should place stations on one horizontal line', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(['A', 'B', 'C']);
 
-    expect(layout.lines).toHaveLength(2);
-    expect(layout.transfers).toEqual([
-      expect.objectContaining({
-        name: 'Shared',
-        lineColors: ['#ff0000', '#0000ff'],
-      }),
-    ]);
+    expect(layout.stations.map((station) => station.y)).toEqual([220, 220, 220]);
+    expect(layout.path).toBe('M 0 220 L 192.00 220');
   });
 });
