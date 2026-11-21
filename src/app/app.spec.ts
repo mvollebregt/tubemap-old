@@ -238,6 +238,49 @@ describe('App', () => {
     expect(bHorizontal.x).toBe(bVertical.x);
   });
 
+  it('should offset each shared segment when overlaps continue across three lines', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C'],
+        ['B', 'C', 'D'],
+        ['C', 'D', 'E'],
+      ],
+      ['#E32017', '#003688', '#FFD300'],
+    );
+
+    const segment = (
+      lineIndex: number,
+      fromName: string,
+      toName: string,
+    ): [number, number, number, number] => {
+      const stations = layout.lines[lineIndex].stations;
+      const from = stations.find((station) => station.name === fromName)!;
+      const to = stations.find((station) => station.name === toName)!;
+      return [from.x, from.y, to.x, to.y];
+    };
+
+    const assertParallelAndAdjacent = (
+      first: [number, number, number, number],
+      second: [number, number, number, number],
+    ) => {
+      const firstDx = first[2] - first[0];
+      const firstDy = first[3] - first[1];
+      const secondDx = second[2] - second[0];
+      const secondDy = second[3] - second[1];
+      expect(firstDx * secondDy - firstDy * secondDx).toBe(0);
+      const segmentLength = Math.hypot(firstDx, firstDy);
+      const perpendicularDistance = Math.abs(
+        firstDx * (second[1] - first[1]) -
+        firstDy * (second[0] - first[0]),
+      ) / segmentLength;
+      expect(perpendicularDistance).toBe(10);
+    };
+
+    assertParallelAndAdjacent(segment(0, 'B', 'C'), segment(1, 'B', 'C'));
+    assertParallelAndAdjacent(segment(1, 'C', 'D'), segment(2, 'C', 'D'));
+  });
+
   it('should use no curved or arbitrary-angle segments across a shared run', () => {
     const mapping = new MetroMappingService();
     const layout = mapping.layout(
@@ -448,6 +491,54 @@ describe('App', () => {
     expect(H.tick.y1).toBe(H.y);
     expect(H.tick.y2).toBe(H.y);
     expect(H.tick.x1).not.toBe(H.tick.x2);
+  });
+
+  it('should keep a horizontal tick for a multi-letter middle station', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C', 'D', 'E'],
+        ['F', 'B', 'C', 'D', 'E', 'G'],
+        ['C', 'HA', 'I'],
+      ],
+      ['#E32017', '#003688', '#FFD300'],
+    );
+
+    const HA = layout.lines[2].stations.find((station) => station.name === 'HA')!;
+    expect(HA.tick.y1).toBe(HA.y);
+    expect(HA.tick.y2).toBe(HA.y);
+    expect(HA.tick.x1).not.toBe(HA.tick.x2);
+  });
+
+  it('should align ticks for stations on fourth and fifth vertical lines', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C', 'D', 'E'],
+        ['F', 'B', 'C', 'D', 'E', 'G'],
+        ['C', 'H', 'I'],
+        ['C', 'J', 'K', 'L'],
+        ['C', 'M', 'N', 'O', 'P'],
+      ],
+      ['#E32017', '#003688', '#FFD300', '#00782A', '#7156A5'],
+    );
+
+    layout.lines.forEach((line) => {
+      line.stations.forEach((station) => {
+        expect(Math.hypot(
+          station.tick.x2 - station.tick.x1,
+          station.tick.y2 - station.tick.y1,
+        )).toBeGreaterThan(0);
+      });
+    });
+
+    layout.lines.slice(2).forEach((line) => {
+      line.stations.forEach((station) => {
+        expect(station.tick.y1).toBe(station.y);
+        expect(station.tick.y2).toBe(station.y);
+        expect(station.tick.x1).not.toBe(station.tick.x2);
+      });
+    });
   });
 
   it('should align shared ticks on the station axis and label side', () => {

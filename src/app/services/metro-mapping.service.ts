@@ -291,36 +291,35 @@ export class MetroMappingService {
     basePositions: Array<Array<{ name: string; point: Point }>>,
     runs: OverlapRun[],
   ): void {
+    const lineOffsets = basePositions.map(() => ({ x: 0, y: 0 }));
+
     runs.forEach((run) => {
-      const orientations = run.lineIndices.map((lineIndex) =>
-        this.orientationForLine(lineIndex),
-      );
-      if (orientations.some((orientation) => orientation !== orientations[0])) {
-        if (run.lineIndices.includes(0) && run.lineIndices.includes(1)) {
-          run.names.forEach((name) => {
-            const horizontal = basePositions[0].find((item) => item.name === name);
-            const vertical = basePositions[1].find((item) => item.name === name);
-            if (horizontal) horizontal.point.y -= this.parallelGap / 2;
-            if (vertical) vertical.point.y += this.parallelGap / 2;
-          });
-        }
-        return;
-      }
+      const firstLine = basePositions[run.lineIndices[0]];
+      const runStart = firstLine.find((item) => item.name === run.names[0])!.point;
+      const runEnd = firstLine.find(
+        (item) => item.name === run.names[run.names.length - 1],
+      )!.point;
+      const dx = runEnd.x - runStart.x;
+      const dy = runEnd.y - runStart.y;
+      const length = Math.hypot(dx, dy);
+      const normal = length > 0
+        ? { x: -dy / length, y: dx / length }
+        : this.orientationForLine(run.lineIndices[0]) === 'horizontal'
+          ? { x: 0, y: 1 }
+          : { x: 1, y: 0 };
 
       run.lineIndices.forEach((lineIndex, rank) => {
-        const orientation = this.orientationForLine(lineIndex);
         const offset =
           (rank - (run.lineIndices.length - 1) / 2) * this.parallelGap;
+        lineOffsets[lineIndex].x += normal.x * offset;
+        lineOffsets[lineIndex].y += normal.y * offset;
+      });
+    });
 
-        run.names.forEach((name) => {
-          const station = basePositions[lineIndex].find((item) => item.name === name);
-          if (!station) return;
-          if (orientation === 'horizontal') {
-            station.point.y += offset;
-          } else {
-            station.point.x += offset;
-          }
-        });
+    basePositions.forEach((stations, lineIndex) => {
+      stations.forEach(({ point }) => {
+        point.x += lineOffsets[lineIndex].x;
+        point.y += lineOffsets[lineIndex].y;
       });
     });
   }
@@ -383,15 +382,6 @@ export class MetroMappingService {
     lines.forEach((line) => {
       line.stations.forEach((station, index) => {
         if (transferNames.has(station.name)) return;
-        if (line.orientation === 'vertical' && station.name === 'H') {
-          station.tick = {
-            x1: station.x,
-            y1: station.y,
-            x2: station.x + 12,
-            y2: station.y,
-          };
-          return;
-        }
         const previous = line.stations[index - 1];
         const next = line.stations[index + 1];
         const tangent = this.tangentAtStation(previous, station, next);
@@ -430,19 +420,22 @@ export class MetroMappingService {
   ): Point {
     let x = 0;
     let y = 0;
+    let fallback: Point | undefined;
     [previous, next].forEach((neighbor) => {
       if (!neighbor) return;
       const dx = neighbor.x - station.x;
       const dy = neighbor.y - station.y;
       const length = Math.hypot(dx, dy);
       if (length > 0) {
-        x += dx / length;
-        y += dy / length;
+        const direction = { x: dx / length, y: dy / length };
+        fallback ??= direction;
+        x += direction.x;
+        y += direction.y;
       }
     });
     const length = Math.hypot(x, y);
     return length === 0
-      ? { x: 1, y: 0 }
+      ? fallback ?? { x: 1, y: 0 }
       : { x: x / length, y: y / length };
   }
 
