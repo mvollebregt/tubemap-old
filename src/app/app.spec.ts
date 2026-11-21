@@ -166,8 +166,8 @@ describe('App', () => {
       (station) => station.name === 'Shared 3',
     )!;
 
-    expect(sharedTwo.y).toBe(165);
-    expect(sharedThree.y).toBe(165);
+    expect(sharedTwo.y).toBe(160);
+    expect(sharedThree.y).toBe(160);
     expect(secondLine.path).toContain(
       `L ${sharedThree.x.toFixed(2)} ${sharedThree.y.toFixed(2)}`,
     );
@@ -235,7 +235,68 @@ describe('App', () => {
 
     expect(cHorizontal.y - bHorizontal.y).toBe(0);
     expect(cVertical.y - bVertical.y).toBe(0);
-    expect(cHorizontal.y).toBe(155);
-    expect(cVertical.y).toBe(165);
+    expect(cHorizontal.y).toBe(150);
+    expect(cVertical.y).toBe(160);
+    expect(cVertical.y - cHorizontal.y).toBe(10);
+  });
+
+  it('should use no curved or arbitrary-angle segments across a shared run', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C', 'D', 'End'],
+        ['Top', 'B', 'C', 'D', 'Below'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    for (const line of layout.lines) {
+      const stationYs = line.stations.map((station) => station.y);
+      const stationXs = line.stations.map((station) => station.x);
+      for (let index = 1; index < line.stations.length; index++) {
+        const dx = Math.abs(stationXs[index] - stationXs[index - 1]);
+        const dy = Math.abs(stationYs[index] - stationYs[index - 1]);
+        expect(dx === 0 || dy === 0 || dx === dy).toBe(true);
+      }
+    }
+  });
+
+  it('should render two separate lines even when there is no overlap', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [['A', 'B', 'C'], ['X', 'Y', 'Z']],
+      '#E32017',
+      '#003688',
+    );
+
+    expect(layout.lines).toHaveLength(2);
+    expect(layout.transfers).toHaveLength(0);
+    expect(layout.lines[0].stations.map((station) => station.y).every((y) => y === 155)).toBe(true);
+    expect(layout.lines[1].stations.every((station) =>
+      station.x === layout.lines[1].stations[0].x,
+    )).toBe(true);
+  });
+
+  it('should treat a one-station overlap as a transfer without a parallel lane', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'Shared', 'C'],
+        ['Top', 'Shared', 'Bottom'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    expect(layout.transfers.map((transfer) => transfer.name)).toContain('Shared');
+    const horizontal = layout.lines[0].stations.find(
+      (station) => station.name === 'Shared',
+    )!;
+    const vertical = layout.lines[1].stations.find(
+      (station) => station.name === 'Shared',
+    )!;
+    expect(horizontal.y).toBe(155);
+    expect(vertical.y).toBe(155);
   });
 });

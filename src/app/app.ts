@@ -19,21 +19,22 @@ const LINES: readonly MetroLine[] = [
   { name: 'Waterloo & City', color: '#95CDBA' },
 ];
 
-const VOORBEELD = `Groningen
-Haren
-Assen
-Beilen
-Hoogeveen
-Meppel
-Zwolle
+const VOORBEELD = `Groningen Noord
+Groningen
+Kropswolde
+Martenshoek
+Hoogezand Sappemeer
+Zuidbroek
+Veendam
 
-Amsterdam Centraal
-Schiphol
-Leiden
-Den Haag Centraal
-Gouda
-Utrecht Centraal
-Amersfoort`;
+ZuidHorn
+Groningen
+Kropswolde
+Martenshoek
+Hoogezand Sappemeer
+Zuidbroek
+Scheemda
+Winschoten`;
 
 @Component({
   selector: 'app-root',

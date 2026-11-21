@@ -21,6 +21,7 @@ interface OverlapRun {
 export class MetroMappingService {
   private readonly lineY = 155;
   private readonly labelYOffset = 34;
+  private readonly parallelLaneOffset = 5;
   private readonly stationSpacing = 72;
 
   layout(
@@ -41,7 +42,8 @@ export class MetroMappingService {
       72,
       ...firstNames.map((name) => name.length * 8 + 24),
     );
-    const horizontalStations = firstNames.map((name, index) =>
+    const firstNamesHorizontal = firstNames;
+    const horizontalStations = firstNamesHorizontal.map((name, index) =>
       this.placeHorizontalStation(
         name,
         index,
@@ -65,62 +67,72 @@ export class MetroMappingService {
     if (usableLines[1]) {
       const secondNames = usableLines[1];
       const overlapRuns = this.findOverlapRuns(firstNames, secondNames);
+      const parallelRuns = overlapRuns.filter((run) => run.names.length >= 2);
       const sharedNames = overlapRuns.flatMap((run) => run.names);
+      const parallelNames = new Set(parallelRuns.flatMap((run) => run.names));
       const boundaryNames = overlapRuns.flatMap((run) =>
         run.names.length === 1
           ? [run.names[0]]
           : [run.names[0], run.names[run.names.length - 1]],
       );
-      const firstShared = overlapRuns[0]?.names[0];
-      const sharedHorizontal = firstShared
-        ? horizontalStations.find((station) => station.name === firstShared)
-        : undefined;
-      const sharedIndex = firstShared ? secondNames.indexOf(firstShared) : -1;
-      const verticalX = sharedHorizontal?.x
+      const firstRun = overlapRuns[0];
+      const lastRun = overlapRuns[overlapRuns.length - 1];
+      const firstSharedName = firstRun?.names[0];
+      const lastSharedName = lastRun?.names[lastRun.names.length - 1];
+      const firstBoundaryStation = horizontalStations.find(
+        (station) => station.name === firstSharedName,
+      );
+      const lastBoundaryStation = horizontalStations.find(
+        (station) => station.name === lastSharedName,
+      );
+      const verticalX = firstBoundaryStation?.x
         ?? (firstNames.length - 1) * horizontalSpacing + 180;
+      const lastVerticalX = lastBoundaryStation?.x ?? verticalX;
+      const horizontalLaneY = parallelNames.size > 0
+        ? this.lineY - this.parallelLaneOffset
+        : this.lineY;
+      const verticalLaneY = parallelNames.size > 0
+        ? this.lineY + this.parallelLaneOffset
+        : this.lineY;
 
       const verticalStations = secondNames.map((name, index) => {
         const overlapRun = overlapRuns.find((run) => run.names.includes(name));
         if (overlapRun) {
           const horizontal = horizontalStations.find((station) => station.name === name)!;
+          const isParallel = parallelNames.has(name);
+          const isBoundary = boundaryNames.includes(name);
           return this.placeVerticalStation(
             name,
             index,
             secondNames.length,
             horizontal.x,
-            this.lineY + 10,
-            true,
+            isParallel
+              ? verticalLaneY
+              : this.lineY,
+            isParallel && !isBoundary,
           );
         }
-        const firstRun = overlapRuns[0];
-        const lastRun = overlapRuns[overlapRuns.length - 1];
-        const firstSharedIndex = firstRun?.verticalIndices[0];
-        const lastSharedIndex = lastRun?.verticalIndices[lastRun.verticalIndices.length - 1];
-        const firstSharedName = firstRun?.names[0];
-        const lastSharedName = lastRun?.names[lastRun.names.length - 1];
-        const firstSharedHorizontal = horizontalStations.find(
-          (station) => station.name === firstSharedName,
-        );
-        const lastSharedHorizontal = horizontalStations.find(
-          (station) => station.name === lastSharedName,
-        );
 
+        const firstSharedIndex = firstRun?.verticalIndices[0];
         if (firstSharedIndex !== undefined && index < firstSharedIndex) {
           return this.placeVerticalStation(
             name,
             index,
             secondNames.length,
-            firstSharedHorizontal?.x ?? verticalX,
-            this.lineY + 10 - (firstSharedIndex - index) * 72,
+            verticalX,
+            this.lineY +
+              this.parallelLaneOffset -
+              (firstSharedIndex - index) * this.stationSpacing,
             false,
           );
         }
+        const lastSharedIndex = lastRun?.verticalIndices[lastRun.verticalIndices.length - 1];
         if (lastSharedIndex !== undefined && index > lastSharedIndex) {
           return this.placeVerticalStation(
             name,
             index,
             secondNames.length,
-            lastSharedHorizontal?.x ?? verticalX,
+            lastVerticalX,
             this.lineY + 10 + (index - lastSharedIndex) * 72,
             false,
           );
@@ -131,13 +143,13 @@ export class MetroMappingService {
           index,
           secondNames.length,
           verticalX,
-          this.lineY + 10 + (index - (firstSharedIndex ?? index)) * 72,
+          this.lineY + index * 72,
           false,
         );
       });
 
       horizontalStations.forEach((station) => {
-        station.y = this.lineY;
+        station.y = horizontalLaneY;
         station.tick = sharedNames.includes(station.name)
           ? { x1: station.x, y1: station.y - 12, x2: station.x, y2: station.y }
           : station.tick;
@@ -173,8 +185,8 @@ export class MetroMappingService {
           transfers.push({
             name: horizontalStation.name,
             x: verticalStation.x,
-            y: this.lineY + 5,
-            label: this.findTransferLabel(verticalStation.x, this.lineY + 5),
+            y: this.lineY,
+            label: this.findTransferLabel(verticalStation.x, this.lineY),
           });
         }
       });
@@ -304,7 +316,6 @@ export class MetroMappingService {
     if (stations.length === 0) return '';
     let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
     for (let index = 1; index < stations.length; index++) {
-      const previous = stations[index - 1];
       const station = stations[index];
       path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
     }
@@ -320,12 +331,20 @@ export class MetroMappingService {
   ): string {
     if (stations.length === 0) return '';
     const sharedNames = new Set(overlapRuns.flatMap((run) => run.names));
+    const parallelNames = new Set(
+      overlapRuns
+        .filter((run) => run.names.length >= 2)
+        .flatMap((run) => run.names),
+    );
     let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
 
     stations.forEach((station, index) => {
       if (index === 0) return;
       const previous = stations[index - 1];
-      if (sharedNames.has(previous.name) && sharedNames.has(station.name)) {
+      if (
+        parallelNames.has(previous.name) &&
+        parallelNames.has(station.name)
+      ) {
         path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
       } else {
         path += this.normalizedSegment(previous, station);
@@ -471,9 +490,16 @@ export class MetroMappingService {
     if (Math.abs(dx) === Math.abs(dy)) {
       return ` L ${this.format(to.x)} ${this.format(to.y)}`;
     }
-    if (Math.abs(dx) > Math.abs(dy)) {
-      return ` L ${this.format(to.x)} ${this.format(from.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
+    const diagonalLength = Math.min(Math.abs(dx), Math.abs(dy));
+    const diagonalX = from.x + Math.sign(dx) * diagonalLength;
+    const diagonalY = from.y + Math.sign(dy) * diagonalLength;
+    let path = ` L ${this.format(diagonalX)} ${this.format(diagonalY)}`;
+    if (dx !== 0 && Math.abs(to.x - diagonalX) > 0.01) {
+      path += ` L ${this.format(to.x)} ${this.format(diagonalY)}`;
     }
-    return ` L ${this.format(from.x)} ${this.format(to.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
+    if (dy !== 0 && Math.abs(to.y - diagonalY) > 0.01) {
+      path += ` L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    return path;
   }
 }
