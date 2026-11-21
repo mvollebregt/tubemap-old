@@ -2,8 +2,18 @@ import { Injectable } from '@angular/core';
 import { MetroLayout } from '../models/metro-layout.interface';
 import { MetroLineLayout } from '../models/metro-line-layout.interface';
 import { PlacedStation } from '../models/placed-station.interface';
-import { StationTick } from '../models/station-tick.interface';
+import { StationLabel } from '../models/station-label.interface';
 import { TransferStation } from '../models/transfer-station.interface';
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface OverlapRun {
+  lineIndices: number[];
+  names: string[];
+}
 
 interface TextBox {
   x: number;
@@ -12,338 +22,535 @@ interface TextBox {
   height: number;
 }
 
-interface OverlapRun {
-  names: string[];
-  horizontalIndices: number[];
-  verticalIndices: number[];
-}
-
 @Injectable({ providedIn: 'root' })
 export class MetroMappingService {
-  private readonly lineY = 155;
-  private readonly labelYOffset = 34;
-  private readonly parallelLaneOffset = 5;
+  private readonly lineWidth = 10;
   private readonly stationSpacing = 72;
+  private readonly laneSpacing = 10;
+  private readonly parallelLaneOffset = 5;
+  private readonly baseY = 155;
 
   layout(
     lineNames: string[][],
-    firstColor: string,
-    secondColor: string,
+    firstColor: string | string[],
+    secondColor = '',
   ): MetroLayout {
-    const usableLines = lineNames
-      .map((names) => names.map((name) => name.trim()).filter(Boolean))
-      .filter((names) => names.length > 0);
+    const names = lineNames
+      .map((stations) => stations.map((name) => name.trim()).filter(Boolean))
+      .filter((stations) => stations.length > 0);
 
-    if (usableLines.length === 0) {
+    if (names.length === 0) {
       return { stations: [], path: '', viewBox: '0 0 100 100', lines: [], transfers: [] };
     }
 
-    const firstNames = usableLines[0];
-    const horizontalSpacing = Math.max(
+    const colors = Array.isArray(firstColor)
+      ? firstColor
+      : [firstColor, secondColor].filter(Boolean);
+
+    const firstSpacing = Math.max(
       72,
-      ...firstNames.map((name) => name.length * 8 + 24),
+      ...names[0].map((name) => name.length * 8 + 24),
     );
-    const firstNamesHorizontal = firstNames;
-    const horizontalStations = firstNamesHorizontal.map((name, index) =>
-      this.placeHorizontalStation(
-        name,
-        index,
-        firstNames.length,
-        index * horizontalSpacing,
-      ),
-    );
-
-    const firstLine: MetroLineLayout = {
-      color: firstColor,
-      orientation: 'horizontal',
-      stations: horizontalStations,
-      path: `M ${this.format(0)} ${this.lineY} L ${this.format((firstNames.length - 1) * horizontalSpacing)} ${this.lineY}`,
-      sharedStationNames: [],
-      boundaryStationNames: [],
-    };
-
-    const lines = [firstLine];
-    const transfers: TransferStation[] = [];
-
-    if (usableLines[1]) {
-      const secondNames = usableLines[1];
-      const overlapRuns = this.findOverlapRuns(firstNames, secondNames);
-      const parallelRuns = overlapRuns.filter((run) => run.names.length >= 2);
-      const sharedNames = overlapRuns.flatMap((run) => run.names);
-      const parallelNames = new Set(parallelRuns.flatMap((run) => run.names));
-      const boundaryNames = overlapRuns.flatMap((run) =>
-        run.names.length === 1
-          ? [run.names[0]]
-          : [run.names[0], run.names[run.names.length - 1]],
-      );
-      const firstRun = overlapRuns[0];
-      const lastRun = overlapRuns[overlapRuns.length - 1];
-      const firstSharedName = firstRun?.names[0];
-      const lastSharedName = lastRun?.names[lastRun.names.length - 1];
-      const firstBoundaryStation = horizontalStations.find(
-        (station) => station.name === firstSharedName,
-      );
-      const lastBoundaryStation = horizontalStations.find(
-        (station) => station.name === lastSharedName,
-      );
-      const verticalX = firstBoundaryStation?.x
-        ?? (firstNames.length - 1) * horizontalSpacing + 180;
-      const lastVerticalX = lastBoundaryStation?.x ?? verticalX;
-      const horizontalLaneY = parallelNames.size > 0
-        ? this.lineY - this.parallelLaneOffset
-        : this.lineY;
-      const verticalLaneY = parallelNames.size > 0
-        ? this.lineY + this.parallelLaneOffset
-        : this.lineY;
-
-      const verticalStations = secondNames.map((name, index) => {
-        const overlapRun = overlapRuns.find((run) => run.names.includes(name));
-        if (overlapRun) {
-          const horizontal = horizontalStations.find((station) => station.name === name)!;
-          const isParallel = parallelNames.has(name);
-          const isBoundary = boundaryNames.includes(name);
-          return this.placeVerticalStation(
-            name,
-            index,
-            secondNames.length,
-            horizontal.x,
-            isParallel
-              ? verticalLaneY
-              : this.lineY,
-            isParallel && !isBoundary,
-          );
-        }
-
-        const firstSharedIndex = firstRun?.verticalIndices[0];
-        if (firstSharedIndex !== undefined && index < firstSharedIndex) {
-          return this.placeVerticalStation(
-            name,
-            index,
-            secondNames.length,
-            verticalX,
-            this.lineY +
-              this.parallelLaneOffset -
-              (firstSharedIndex - index) * this.stationSpacing,
-            false,
-          );
-        }
-        const lastSharedIndex = lastRun?.verticalIndices[lastRun.verticalIndices.length - 1];
-        if (lastSharedIndex !== undefined && index > lastSharedIndex) {
-          return this.placeVerticalStation(
-            name,
-            index,
-            secondNames.length,
-            lastVerticalX,
-            this.lineY + 10 + (index - lastSharedIndex) * 72,
-            false,
-          );
-        }
-
-        return this.placeVerticalStation(
+    const masterPositions = new Map<string, Point>();
+    const basePositions: Array<Array<{ name: string; point: Point }>> = [];
+    names.forEach((stationNames, lineIndex) => {
+      if (lineIndex === 0) {
+        const stations = stationNames.map((name, stationIndex) => ({
           name,
-          index,
-          secondNames.length,
-          verticalX,
-          this.lineY + index * 72,
-          false,
-        );
+          point: { x: stationIndex * firstSpacing, y: this.baseY },
+        }));
+        basePositions.push(stations);
+        stations.forEach(({ name, point }) => masterPositions.set(name, point));
+        return;
+      }
+
+      const orientation = lineIndex % 2 === 1 ? 'vertical' : 'horizontal';
+      const bandOffset = (lineIndex + 1) * 180;
+      const existingNames = stationNames.filter((name) => masterPositions.has(name));
+      const anchor = existingNames.length
+        ? masterPositions.get(existingNames[0])!
+        : undefined;
+
+      const stations = stationNames.map((name, stationIndex) => {
+        if (masterPositions.has(name)) {
+          return { name, point: { ...masterPositions.get(name)! } };
+        }
+        if (orientation === 'vertical') {
+          return {
+            name,
+            point: {
+              x: anchor?.x ?? this.rightEdge(names, firstSpacing) + bandOffset,
+              y: this.baseY + (stationIndex - stationNames.indexOf(existingNames[0] ?? stationNames[0])) * this.stationSpacing,
+            },
+          };
+        }
+        return {
+          name,
+          point: {
+            x: anchor?.x
+              ? anchor.x + (stationIndex - stationNames.indexOf(existingNames[0] ?? stationNames[0])) * this.stationSpacing
+              : stationIndex * this.stationSpacing,
+            y: this.baseY + bandOffset,
+          },
+        };
       });
-
-      horizontalStations.forEach((station) => {
-        station.y = horizontalLaneY;
+      basePositions.push(stations);
+      stations.forEach(({ name, point }) => {
+        if (!masterPositions.has(name)) masterPositions.set(name, point);
       });
+    });
 
-      firstLine.sharedStationNames = sharedNames;
-      firstLine.boundaryStationNames = boundaryNames;
-      firstLine.path = this.buildHorizontalParallelPath(horizontalStations);
+    const overlapRuns = this.findAllOverlapRuns(names);
+    const parallelRuns = overlapRuns.filter((run) => run.names.length >= 2);
 
-      const topY = Math.min(...verticalStations.map((station) => station.y));
-      const bottomY = Math.max(...verticalStations.map((station) => station.y));
-      const secondLine: MetroLineLayout = {
-        color: secondColor,
-        orientation: 'vertical',
-        stations: verticalStations,
-        path: this.buildVerticalPath(
-          verticalStations,
-          overlapRuns,
-          verticalX,
-          topY,
-          bottomY,
-        ),
-        sharedStationNames: sharedNames,
-        boundaryStationNames: boundaryNames,
-      };
-      lines.push(secondLine);
-
-      horizontalStations.forEach((horizontalStation) => {
-        const verticalStation = verticalStations.find(
-          (station) => station.name === horizontalStation.name,
-        );
-        if (verticalStation && boundaryNames.includes(horizontalStation.name)) {
-          transfers.push({
-            name: horizontalStation.name,
-            x: verticalStation.x,
-            y: this.lineY,
-            label: this.findTransferLabel(verticalStation.x, this.lineY),
-          });
+    basePositions.forEach((stations, lineIndex) => {
+      stations.forEach(({ name, point }) => {
+        if (basePositions.length > 1 &&
+            this.isDirectConsecutiveMatch(basePositions[0], basePositions[1], name)) {
+          const master = basePositions[0].find((station) => station.name === name)?.point ?? point;
+          point.x = master.x;
+          point.y = lineIndex === 0
+            ? master.y - this.parallelLaneOffset
+            : lineIndex === 1
+              ? master.y + this.parallelLaneOffset
+              : point.y;
+          return;
+        }
+        const participatingLines = this.parallelLineMembership(basePositions, name);
+        if (participatingLines.length < 2) return;
+        const rank = participatingLines.indexOf(lineIndex);
+        const offset = (rank - (participatingLines.length - 1) / 2) * this.laneSpacing;
+        const master = basePositions[0].find((station) => station.name === name)?.point ?? point;
+        point.x = master.x;
+        if (lineIndex <= 1 && basePositions.length > 1) {
+          point.y = lineIndex === 0
+            ? master.y - this.parallelLaneOffset
+            : master.y + this.parallelLaneOffset;
+        } else {
+          point.y = master.y + offset;
         }
       });
+    });
+
+    if (basePositions.length > 1) {
+      let firstIndex = 0;
+      while (firstIndex < names[0].length) {
+        const secondIndex = names[1].indexOf(names[0][firstIndex]);
+        if (secondIndex < 0) {
+          firstIndex++;
+          continue;
+        }
+        let runLength = 0;
+        while (
+          firstIndex + runLength < names[0].length &&
+          secondIndex + runLength < names[1].length &&
+          names[0][firstIndex + runLength] === names[1][secondIndex + runLength]
+        ) {
+          runLength++;
+        }
+        if (runLength >= 2) {
+          const firstSharedName = names[0][firstIndex];
+          const lastSharedName = names[0][firstIndex + runLength - 1];
+          basePositions[0].forEach((station) => {
+            station.point.y = 155 - this.parallelLaneOffset;
+          });
+          const firstShared = basePositions[0].find((station) => station.name === firstSharedName);
+          const lastShared = basePositions[0].find((station) => station.name === lastSharedName);
+          const secondFirstIndex = names[1].indexOf(firstSharedName);
+          const secondLastIndex = names[1].indexOf(lastSharedName);
+
+          if (firstShared && secondFirstIndex >= 0) {
+            basePositions[1].forEach((station, stationIndex) => {
+              if (stationIndex < secondFirstIndex) {
+                station.point.x = firstShared.point.x;
+                station.point.y = 155 - (secondFirstIndex - stationIndex) * 72;
+              } else if (stationIndex > secondLastIndex) {
+                station.point.x = lastShared?.point.x ?? firstShared.point.x;
+                station.point.y = 160 + (stationIndex - secondLastIndex) * 72;
+              }
+            });
+          }
+
+          for (let offset = 0; offset < runLength; offset++) {
+            const name = names[0][firstIndex + offset];
+            const firstStation = basePositions[0].find((station) => station.name === name);
+            const secondStation = basePositions[1].find((station) => station.name === name);
+            if (firstStation) firstStation.point.y = 155 - this.parallelLaneOffset;
+            if (secondStation) {
+              secondStation.point.x = firstStation?.point.x ?? secondStation.point.x;
+              secondStation.point.y = 155 + this.parallelLaneOffset;
+            }
+          }
+          firstIndex += runLength;
+        } else {
+          firstIndex++;
+        }
+      }
     }
 
+    const positionByLine = basePositions.map((stations) =>
+      stations.map(({ name, point }) => ({
+        name,
+        point: { ...point },
+      })),
+    );
+    positionByLine.forEach((stations) => {
+      stations.forEach(({ name, point }) => {
+        masterPositions.set(name, point);
+      });
+    });
+
+    const lines: MetroLineLayout[] = names.map((stationNames, lineIndex) => {
+      const orientation = lineIndex === 0
+        ? 'horizontal'
+        : lineIndex % 2 === 1
+          ? 'vertical'
+          : 'horizontal';
+      const stations = positionByLine[lineIndex].map(({ name, point }, stationIndex) =>
+        this.placeStation(
+          name,
+          point,
+          stationIndex,
+          stationNames.length,
+          orientation,
+        ),
+      );
+
+      return {
+        color: colors[lineIndex] ?? this.fallbackColor(lineIndex),
+        orientation,
+        stations,
+        path: this.buildPath(stations),
+        sharedStationNames: this.sharedNamesForLine(names, lineIndex),
+        boundaryStationNames: this.boundaryNamesForLine(names, overlapRuns, lineIndex),
+      };
+    });
+
+    const transfers = this.findTransfers(names, lines, overlapRuns);
     this.alignStationTicks(lines, transfers);
-    this.placeCollisionFreeLabels(lines, transfers);
+    this.placeLabels(lines, transfers);
 
     const allStations = lines.flatMap((line) => line.stations);
     const xs = allStations.map((station) => station.x);
     const ys = allStations.map((station) => station.y);
-    const minX = Math.min(...xs) - 64;
-    const maxX = Math.max(...xs) + 64;
-    const minY = Math.min(...ys) - 64;
-    const maxY = Math.max(...ys) + 64;
-    const viewBox = `${this.format(minX)} ${this.format(minY)} ${this.format(maxX - minX)} ${this.format(maxY - minY)}`;
+    const minX = Math.min(...xs) - 72;
+    const maxX = Math.max(...xs) + 72;
+    const minY = Math.min(...ys) - 72;
+    const maxY = Math.max(...ys) + 72;
 
     return {
-      stations: firstLine.stations,
-      path: firstLine.path,
-      viewBox,
+      stations: lines[0].stations,
+      path: lines[0].path,
+      viewBox: `${this.format(minX)} ${this.format(minY)} ${this.format(maxX - minX)} ${this.format(maxY - minY)}`,
       lines,
       transfers,
     };
   }
 
-  private placeHorizontalStation(
+  private rightEdge(names: string[][], spacing: number): number {
+    return Math.max(
+      0,
+      names[0].length - 1,
+    ) * spacing;
+  }
+
+  private fallbackColor(index: number): string {
+    const palette = [
+      '#B36305',
+      '#E32017',
+      '#FFD300',
+      '#00782A',
+      '#7156A5',
+      '#F3A9BB',
+      '#A0A5A9',
+      '#9B0056',
+      '#000000',
+      '#003688',
+      '#0098D4',
+      '#95CDBA',
+    ];
+    return palette[index % palette.length];
+  }
+
+  private placeStation(
     name: string,
+    point: Point,
     index: number,
     stationCount: number,
-    x: number,
+    orientation: 'horizontal' | 'vertical' | 'diagonal',
   ): PlacedStation {
     const terminal = index === 0 || index === stationCount - 1;
+    let tick = this.tickForOrientation(point, orientation, terminal);
+
     return {
       name,
-      x,
-      y: this.lineY,
+      x: point.x,
+      y: point.y,
       terminus: terminal,
-      tick: terminal
-        ? { x1: x, y1: this.lineY - 12, x2: x, y2: this.lineY + 12 }
-        : { x1: x, y1: this.lineY - 12, x2: x, y2: this.lineY },
+      tick,
       label: {
-        transform: `translate(${this.format(x)} ${this.format(this.lineY - this.labelYOffset)})`,
+        transform: `translate(${this.format(point.x)} ${this.format(point.y - 34)})`,
         anchor: 'middle',
       },
     };
   }
 
-  private horizontalStationTick(
-    x: number,
-    y: number,
+  private tickForOrientation(
+    point: Point,
+    orientation: 'horizontal' | 'vertical' | 'diagonal',
     terminal: boolean,
-  ): StationTick {
-    return terminal
-      ? { x1: x, y1: y - 12, x2: x, y2: y + 12 }
-      : { x1: x, y1: y - 12, x2: x, y2: y };
-  }
-
-  private placeVerticalStation(
-    name: string,
-    index: number,
-    stationCount: number,
-    x: number,
-    y: number,
-    shared = false,
-  ): PlacedStation {
-    const terminal = index === 0 || index === stationCount - 1;
-    return {
-      name,
-      x,
-      y,
-      terminus: terminal,
-      tick: shared
-        ? { x1: x, y1: y, x2: x + 12, y2: y }
-        : terminal
-          ? { x1: x - 12, y1: y, x2: x + 12, y2: y }
-          : { x1: x, y1: y, x2: x + 12, y2: y },
-      label: {
-        transform: `translate(${this.format(x + 18)} ${this.format(y - 5)})`,
-        anchor: 'start',
-      },
-    };
-  }
-
-  private verticalStationTick(
-    x: number,
-    y: number,
-    terminal: boolean,
-    shared: boolean,
-  ): StationTick {
-    if (shared) {
-      return { x1: x, y1: y, x2: x + 12, y2: y };
+  ) {
+    if (orientation === 'horizontal') {
+      return terminal
+        ? { x1: point.x, y1: point.y - 12, x2: point.x, y2: point.y + 12 }
+        : { x1: point.x, y1: point.y - 12, x2: point.x, y2: point.y };
     }
-    return terminal
-      ? { x1: x - 12, y1: y, x2: x + 12, y2: y }
-      : { x1: x, y1: y, x2: x + 12, y2: y };
-  }
-
-  private findTransferLabel(x: number, y: number) {
+    if (orientation === 'vertical') {
+      return terminal
+        ? { x1: point.x - 12, y1: point.y, x2: point.x + 12, y2: point.y }
+        : { x1: point.x, y1: point.y, x2: point.x + 12, y2: point.y };
+    }
     return {
-      transform: `translate(${this.format(x + 18)} ${this.format(y - 18)})`,
-      anchor: 'start' as const,
+      x1: point.x,
+      y1: point.y,
+      x2: point.x,
+      y2: point.y - 12,
     };
   }
 
-  private alignStationTicks(
-    lines: MetroLineLayout[],
-    transfers: TransferStation[],
-  ): void {
-    const transferNames = new Set(transfers.map((transfer) => transfer.name));
+  private isDirectConsecutiveMatch(
+    first: Array<{ name: string; point: Point }>,
+    second: Array<{ name: string; point: Point }>,
+    name: string,
+  ): boolean {
+    const firstIndex = first.findIndex((station) => station.name === name);
+    const secondIndex = second.findIndex((station) => station.name === name);
+    if (firstIndex < 0 || secondIndex < 0) return false;
 
+    let runLength = 1;
+    let left = 1;
+    while (
+      firstIndex - left >= 0 &&
+      secondIndex - left >= 0 &&
+      first[firstIndex - left].name === second[secondIndex - left].name
+    ) {
+      left++;
+      runLength++;
+    }
+    let right = 1;
+    while (
+      firstIndex + right < first.length &&
+      secondIndex + right < second.length &&
+      first[firstIndex + right].name === second[secondIndex + right].name
+    ) {
+      right++;
+      runLength++;
+    }
+    return runLength >= 2;
+  }
+
+  private parallelLineMembership(
+    basePositions: Array<Array<{ name: string; point: Point }>>,
+    name: string,
+  ): number[] {
+    const membership = new Set<number>();
+
+    for (let first = 0; first < basePositions.length; first++) {
+      const firstIndex = basePositions[first].findIndex((station) => station.name === name);
+      if (firstIndex < 0) continue;
+      for (let second = first + 1; second < basePositions.length; second++) {
+        const secondIndex = basePositions[second].findIndex((station) => station.name === name);
+        if (secondIndex < 0) continue;
+
+        const firstNames = basePositions[first].map((station) => station.name);
+        const secondNames = basePositions[second].map((station) => station.name);
+        let length = 1;
+        while (
+          firstIndex - length >= 0 &&
+          secondIndex - length >= 0 &&
+          firstNames[firstIndex - length] === secondNames[secondIndex - length]
+        ) {
+          length++;
+        }
+        let right = 1;
+        while (
+          firstIndex + right < firstNames.length &&
+          secondIndex + right < secondNames.length &&
+          firstNames[firstIndex + right] === secondNames[secondIndex + right]
+        ) {
+          right++;
+        }
+        if (length + right - 1 >= 2) {
+          membership.add(first);
+          membership.add(second);
+        }
+      }
+    }
+
+    return [...membership].sort((a, b) => a - b);
+  }
+
+  private findAllOverlapRuns(names: string[][]): OverlapRun[] {
+    const runs: OverlapRun[] = [];
+    for (let first = 0; first < names.length; first++) {
+      for (let second = first + 1; second < names.length; second++) {
+        let firstIndex = 0;
+        while (firstIndex < names[first].length) {
+          const secondIndex = names[second].indexOf(names[first][firstIndex]);
+          if (secondIndex < 0) {
+            firstIndex++;
+            continue;
+          }
+          let length = 0;
+          while (
+            firstIndex + length < names[first].length &&
+            secondIndex + length < names[second].length &&
+            names[first][firstIndex + length] === names[second][secondIndex + length]
+          ) {
+            length++;
+          }
+          if (length > 0) {
+            const existing = runs.find((run) =>
+              run.names.every((name, index) =>
+                names[first][firstIndex + index] === name,
+              ),
+            );
+            if (existing) {
+              if (!existing.lineIndices.includes(first)) existing.lineIndices.push(first);
+              if (!existing.lineIndices.includes(second)) existing.lineIndices.push(second);
+            } else {
+              runs.push({
+                lineIndices: [first, second],
+                names: names[first].slice(firstIndex, firstIndex + length),
+              });
+            }
+            firstIndex += length;
+          } else {
+            firstIndex++;
+          }
+        }
+      }
+    }
+    return runs;
+  }
+
+  private sharedNamesForLine(names: string[][], lineIndex: number): string[] {
+    const counts = new Map<string, number>();
+    names[lineIndex].forEach((name) => counts.set(name, 1));
+    names.forEach((stationNames, otherIndex) => {
+      if (otherIndex === lineIndex) return;
+      stationNames.forEach((name) => {
+        if (counts.has(name)) counts.set(name, counts.get(name)! + 1);
+      });
+    });
+    return names[lineIndex].filter((name) => counts.get(name)! > 1);
+  }
+
+  private boundaryNamesForLine(
+    names: string[][],
+    runs: OverlapRun[],
+    lineIndex: number,
+  ): string[] {
+    const boundary = new Set<string>();
+    runs.forEach((run) => {
+      if (!run.lineIndices.includes(lineIndex)) return;
+      if (run.names.length === 1) boundary.add(run.names[0]);
+      else {
+        boundary.add(run.names[0]);
+        boundary.add(run.names[run.names.length - 1]);
+      }
+    });
+    return [...boundary];
+  }
+
+  private findTransfers(
+    names: string[][],
+    lines: MetroLineLayout[],
+    runs: OverlapRun[],
+  ): TransferStation[] {
+    const transferNames = new Set<string>();
+    runs.forEach((run) => {
+      if (run.names.length === 1) transferNames.add(run.names[0]);
+      else {
+        transferNames.add(run.names[0]);
+        transferNames.add(run.names[run.names.length - 1]);
+      }
+    });
+
+    names.forEach((stationNames) => {
+      stationNames.forEach((name) => {
+        const lineCount = names.filter((line) => line.includes(name)).length;
+        if (lineCount === 1) return;
+        const belongsToParallelRun = runs.some(
+          (run) => run.names.includes(name) && run.names.length >= 2,
+        );
+        if (!belongsToParallelRun) transferNames.add(name);
+      });
+    });
+
+    const transfers: TransferStation[] = [];
+    transferNames.forEach((name) => {
+      const station = lines
+        .flatMap((line) => line.stations)
+        .find((item) => item.name === name);
+      if (!station) return;
+      transfers.push({
+        name,
+        x: station.x,
+        y: station.y,
+        label: {
+          transform: `translate(${this.format(station.x + 18)} ${this.format(station.y - 18)})`,
+          anchor: 'start',
+        },
+      });
+    });
+    return transfers;
+  }
+
+  private buildPath(stations: PlacedStation[]): string {
+    if (stations.length === 0) return '';
+    let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
+    for (let index = 1; index < stations.length; index++) {
+      const previous = stations[index - 1];
+      const current = stations[index];
+      path += this.normalizedSegment(previous, current);
+    }
+    return path;
+  }
+
+  private normalizedSegment(from: Point, to: Point): string {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (dx === 0 || dy === 0) {
+      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    if (Math.abs(dx) === Math.abs(dy)) {
+      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    const horizontalFirst = Math.abs(dx) >= Math.abs(dy);
+    if (horizontalFirst) {
+      return ` L ${this.format(to.x)} ${this.format(from.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
+    }
+    return ` L ${this.format(from.x)} ${this.format(to.y)} L ${this.format(to.x)} ${this.format(to.y)}`;
+  }
+
+  private alignStationTicks(lines: MetroLineLayout[], transfers: TransferStation[]): void {
+    const transferNames = new Set(transfers.map((transfer) => transfer.name));
     lines.forEach((line) => {
       line.stations.forEach((station, index) => {
         if (transferNames.has(station.name)) return;
-
         const previous = line.stations[index - 1];
         const next = line.stations[index + 1];
-        let tangentX = 0;
-        let tangentY = 0;
+        const tangent = this.tangentBetween(previous, station, next);
 
-        if (previous) {
-          const dx = station.x - previous.x;
-          const dy = station.y - previous.y;
-          const length = Math.hypot(dx, dy);
-          if (length > 0) {
-            tangentX += dx / length;
-            tangentY += dy / length;
-          }
-        }
-        if (next) {
-          const dx = next.x - station.x;
-          const dy = next.y - station.y;
-          const length = Math.hypot(dx, dy);
-          if (length > 0) {
-            tangentX += dx / length;
-            tangentY += dy / length;
-          }
-        }
-
-        const tangentLength = Math.hypot(tangentX, tangentY);
-        if (tangentLength === 0) {
-          tangentX = line.orientation === 'vertical' ? 0 : 1;
-          tangentY = line.orientation === 'vertical' ? 1 : 0;
-        } else {
-          tangentX /= tangentLength;
-          tangentY /= tangentLength;
-        }
-
-        let normalX: number;
-        let normalY: number;
-        if (Math.abs(tangentX) >= 0.99 && Math.abs(tangentY) < 0.01) {
+        let normalX = -tangent.y;
+        let normalY = tangent.x;
+        if (Math.abs(tangent.x) >= 0.99) {
           normalX = 0;
           normalY = -1;
-        } else if (Math.abs(tangentY) >= 0.99 && Math.abs(tangentX) < 0.01) {
+        } else if (Math.abs(tangent.y) >= 0.99) {
           normalX = 1;
           normalY = 0;
-        } else {
-          normalX = tangentX >= 0 ? 1 : -1;
-          normalY = tangentY >= 0 ? -1 : -1;
         }
 
         if (station.terminus) {
@@ -354,129 +561,50 @@ export class MetroMappingService {
             y2: station.y + normalY * 12,
           };
         } else {
-          const labelDirection = { x: 0, y: -1 };
-          const labelSideNormalDot =
-            normalX * labelDirection.x + normalY * labelDirection.y;
-          const signedNormalX =
-            labelSideNormalDot >= 0 ? normalX : -normalX;
-          const signedNormalY =
-            labelSideNormalDot >= 0 ? normalY : -normalY;
           station.tick = {
             x1: station.x,
             y1: station.y,
-            x2: station.x + signedNormalX * 12,
-            y2: station.y + signedNormalY * 12,
+            x2: station.x + normalX * 12,
+            y2: station.y + normalY * 12,
           };
         }
       });
     });
   }
 
-  private findOverlapRuns(
-    horizontalNames: string[],
-    verticalNames: string[],
-  ): OverlapRun[] {
-    const runs: OverlapRun[] = [];
-    let horizontalIndex = 0;
-
-    while (horizontalIndex < horizontalNames.length) {
-      const verticalIndex = verticalNames.indexOf(horizontalNames[horizontalIndex]);
-      if (verticalIndex < 0) {
-        horizontalIndex++;
-        continue;
-      }
-
-      let length = 0;
-      while (
-        horizontalIndex + length < horizontalNames.length &&
-        verticalIndex + length < verticalNames.length &&
-        horizontalNames[horizontalIndex + length] ===
-          verticalNames[verticalIndex + length]
-      ) {
-        length++;
-      }
-
+  private tangentBetween(
+    previous: PlacedStation | undefined,
+    station: PlacedStation,
+    next: PlacedStation | undefined,
+  ): Point {
+    let x = 0;
+    let y = 0;
+    [previous, next].forEach((neighbor) => {
+      if (!neighbor) return;
+      const dx = neighbor.x - station.x;
+      const dy = neighbor.y - station.y;
+      const length = Math.hypot(dx, dy);
       if (length > 0) {
-        runs.push({
-          names: horizontalNames.slice(horizontalIndex, horizontalIndex + length),
-          horizontalIndices: Array.from(
-            { length },
-            (_, offset) => horizontalIndex + offset,
-          ),
-          verticalIndices: Array.from(
-            { length },
-            (_, offset) => verticalIndex + offset,
-          ),
-        });
-        horizontalIndex += length;
-      } else {
-        horizontalIndex++;
-      }
-    }
-
-    return runs;
-  }
-
-  private buildHorizontalParallelPath(stations: PlacedStation[]): string {
-    if (stations.length === 0) return '';
-    let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
-    for (let index = 1; index < stations.length; index++) {
-      const station = stations[index];
-      path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
-    }
-    return path;
-  }
-
-  private buildVerticalPath(
-    stations: PlacedStation[],
-    overlapRuns: OverlapRun[],
-    fallbackX: number,
-    topY: number,
-    bottomY: number,
-  ): string {
-    if (stations.length === 0) return '';
-    const sharedNames = new Set(overlapRuns.flatMap((run) => run.names));
-    const parallelNames = new Set(
-      overlapRuns
-        .filter((run) => run.names.length >= 2)
-        .flatMap((run) => run.names),
-    );
-    let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
-
-    stations.forEach((station, index) => {
-      if (index === 0) return;
-      const previous = stations[index - 1];
-      if (
-        parallelNames.has(previous.name) &&
-        parallelNames.has(station.name)
-      ) {
-        path += ` L ${this.format(station.x)} ${this.format(station.y)}`;
-      } else {
-        path += this.normalizedSegment(previous, station);
+        x += dx / length;
+        y += dy / length;
       }
     });
-
-    const last = stations[stations.length - 1];
-    if (Math.abs(last.y - bottomY) > 0.01) {
-      path += ` L ${this.format(last.x)} ${this.format(bottomY)}`;
-    }
-    return path;
+    const length = Math.hypot(x, y);
+    if (length === 0) return { x: 1, y: 0 };
+    return { x: x / length, y: y / length };
   }
 
-  private placeCollisionFreeLabels(
-    lines: MetroLineLayout[],
-    transfers: TransferStation[],
-  ): void {
-    const boxes: TextBox[] = [];
+  private placeLabels(lines: MetroLineLayout[], transfers: TransferStation[]): void {
+    const occupied: TextBox[] = [];
     const transferNames = new Set(transfers.map((transfer) => transfer.name));
-    const sharedNames = new Set(
-      lines.flatMap((line) => line.sharedStationNames),
-    );
 
     lines.forEach((line) => {
       line.stations.forEach((station) => {
         if (transferNames.has(station.name)) return;
-        if (sharedNames.has(station.name) && line.orientation === 'vertical') return;
+        if (line.sharedStationNames.includes(station.name) &&
+            line.orientation === 'vertical') {
+          return;
+        }
         const width = station.name.length * 8;
         const candidates = line.orientation === 'horizontal'
           ? [
@@ -488,123 +616,64 @@ export class MetroMappingService {
           : [
               { x: station.x + 18, y: station.y - 10 },
               { x: station.x + 18, y: station.y - 24 },
-              { x: station.x + 18, y: station.y + 12 },
               { x: station.x - width - 18, y: station.y - 10 },
+              { x: station.x + 18, y: station.y + 12 },
             ];
 
         const candidate = candidates.find((position) =>
-          this.textFits(position.x, position.y - 14, width, 18, boxes, lines, transfers),
+          this.labelFits(position.x, position.y - 14, width, 18, occupied, lines),
         ) ?? candidates[0];
-        const anchor = line.orientation === 'horizontal'
-          ? 'middle'
-          : candidate.x < station.x
-            ? 'end'
-            : 'start';
+        const middle = line.orientation === 'horizontal';
         station.label = {
-          transform: `translate(${this.format(
-            anchor === 'middle' ? candidate.x + width / 2 : candidate.x,
-          )} ${this.format(candidate.y + 14)})`,
-          anchor,
+          transform: `translate(${this.format(middle ? candidate.x + width / 2 : candidate.x)} ${this.format(candidate.y + 14)})`,
+          anchor: middle ? 'middle' : candidate.x < station.x ? 'end' : 'start',
         };
-        boxes.push({ x: candidate.x - 3, y: candidate.y - 14, width: width + 6, height: 18 });
+        occupied.push({
+          x: candidate.x - 3,
+          y: candidate.y - 14,
+          width: width + 6,
+          height: 18,
+        });
       });
-    });
-
-    transfers.forEach((transfer) => {
-      const width = transfer.name.length * 8;
-      const candidates = [
-        { x: transfer.x + 18, y: transfer.y - 24 },
-        { x: transfer.x - width - 18, y: transfer.y - 24 },
-        { x: transfer.x + 18, y: transfer.y + 14 },
-        { x: transfer.x - width - 18, y: transfer.y + 14 },
-      ];
-      const candidate = candidates.find((position) =>
-        this.textFits(position.x, position.y - 14, width, 18, boxes, lines, transfers),
-      ) ?? candidates[0];
-      transfer.label = {
-        transform: `translate(${this.format(candidate.x)} ${this.format(candidate.y)})`,
-        anchor: 'start',
-      };
-      boxes.push({ x: candidate.x - 3, y: candidate.y - 14, width: width + 6, height: 18 });
     });
   }
 
-  private textFits(
+  private labelFits(
     x: number,
     y: number,
     width: number,
     height: number,
-    boxes: TextBox[],
+    occupied: TextBox[],
     lines: MetroLineLayout[],
-    transfers: TransferStation[],
   ): boolean {
-    const box = { x, y, width, height };
-    if (boxes.some((other) => this.boxesOverlap(box, other))) return false;
+    if (occupied.some((box) =>
+      x < box.x + box.width &&
+      x + width > box.x &&
+      y < box.y + box.height &&
+      y + height > box.y,
+    )) return false;
 
-    const overlapsLine = lines.some((line) => {
+    return !lines.some((line) => {
       if (line.orientation === 'horizontal') {
-        return y <= line.stations[0].y + 12 &&
-          y + height >= line.stations[0].y - 12 &&
-          x < Math.max(...line.stations.map((station) => station.x)) + 12 &&
-          x + width > Math.min(...line.stations.map((station) => station.x)) - 12;
+        const minX = Math.min(...line.stations.map((station) => station.x));
+        const maxX = Math.max(...line.stations.map((station) => station.x));
+        const lineY = line.stations[0].y;
+        return y < lineY + 12 &&
+          y + height > lineY - 12 &&
+          x < maxX + 12 &&
+          x + width > minX - 12;
       }
-      const xPosition = line.stations[0].x;
+      const lineX = line.stations[0].x;
       const minY = Math.min(...line.stations.map((station) => station.y));
       const maxY = Math.max(...line.stations.map((station) => station.y));
-      return x < xPosition + 12 &&
-        x + width > xPosition - 12 &&
+      return x < lineX + 12 &&
+        x + width > lineX - 12 &&
         y < maxY + 12 &&
         y + height > minY - 12;
     });
-    if (overlapsLine) return false;
-
-    const symbols = [
-      ...lines.flatMap((line) =>
-        line.stations.map((station) => ({ x: station.x, y: station.y })),
-      ),
-      ...transfers.map((transfer) => ({ x: transfer.x, y: transfer.y })),
-    ];
-    return !symbols.some((symbol) =>
-      this.distanceToBox(symbol.x, symbol.y, box) < 13,
-    );
-  }
-
-  private boxesOverlap(a: TextBox, b: TextBox): boolean {
-    return a.x < b.x + b.width &&
-      a.x + a.width > b.x &&
-      a.y < b.y + b.height &&
-      a.y + a.height > b.y;
-  }
-
-  private distanceToBox(x: number, y: number, box: TextBox): number {
-    const dx = Math.max(box.x - x, 0, x - (box.x + box.width));
-    const dy = Math.max(box.y - y, 0, y - (box.y + box.height));
-    return Math.hypot(dx, dy);
   }
 
   private format(value: number): string {
     return value.toFixed(2);
-  }
-
-  private normalizedSegment(from: { x: number; y: number }, to: { x: number; y: number }): string {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    if (dx === 0 || dy === 0) {
-      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
-    }
-    if (Math.abs(dx) === Math.abs(dy)) {
-      return ` L ${this.format(to.x)} ${this.format(to.y)}`;
-    }
-    const diagonalLength = Math.min(Math.abs(dx), Math.abs(dy));
-    const diagonalX = from.x + Math.sign(dx) * diagonalLength;
-    const diagonalY = from.y + Math.sign(dy) * diagonalLength;
-    let path = ` L ${this.format(diagonalX)} ${this.format(diagonalY)}`;
-    if (dx !== 0 && Math.abs(to.x - diagonalX) > 0.01) {
-      path += ` L ${this.format(to.x)} ${this.format(diagonalY)}`;
-    }
-    if (dy !== 0 && Math.abs(to.y - diagonalY) > 0.01) {
-      path += ` L ${this.format(to.x)} ${this.format(to.y)}`;
-    }
-    return path;
   }
 }

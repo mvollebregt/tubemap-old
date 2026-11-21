@@ -34,7 +34,11 @@ Martenshoek
 Hoogezand Sappemeer
 Zuidbroek
 Scheemda
-Winschoten`;
+Winschoten
+
+Groningen
+Haren
+Assen`;
 
 @Component({
   selector: 'app-root',
@@ -61,7 +65,9 @@ export class App {
   );
   readonly map = computed(() => {
     const selectedIndex = LINES.findIndex((line) => line.color === this.lineColor());
-    const secondLine = LINES[(selectedIndex + 1) % LINES.length];
-    return this.mapping.layout(this.stationLines(), this.lineColor(), secondLine.color);
+    const colors = this.stationLines().map((_, index) =>
+      LINES[(selectedIndex + index) % LINES.length].color,
+    );
+    return this.mapping.layout(this.stationLines(), colors);
   });
 }

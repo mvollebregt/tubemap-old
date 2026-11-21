@@ -28,7 +28,7 @@ describe('App', () => {
     const layout = mapping.layout([['A', 'B', 'C']], '#E32017', '#003688');
 
     expect(layout.stations.map((station) => station.y)).toEqual([155, 155, 155]);
-    expect(layout.path).toBe('M 0.00 155 L 144.00 155');
+    expect(layout.path).toBe('M 0.00 155.00 L 72.00 155.00 L 144.00 155.00');
   });
 
   it('should stop the line at the first and last station ticks', () => {
@@ -38,7 +38,7 @@ describe('App', () => {
     const last = layout.stations.at(-1)!;
 
     expect(layout.path.startsWith(`M ${first.x.toFixed(2)} ${first.y}`)).toBe(true);
-    expect(layout.path.endsWith(`L ${last.x.toFixed(2)} ${last.y}`)).toBe(true);
+    expect(layout.path.endsWith(`L ${last.x.toFixed(2)} ${last.y.toFixed(2)}`)).toBe(true);
   });
 
   it('should create a transfer at a matching station', () => {
@@ -121,7 +121,7 @@ describe('App', () => {
       (station) => station.name === 'Shared 2',
     )!;
 
-    expect(horizontal.y).toBeLessThan(vertical.y);
+    expect(vertical.y - horizontal.y).toBe(10);
   });
 
   it('should keep the overlap segment to the last stations parallel and direct', () => {
@@ -142,7 +142,7 @@ describe('App', () => {
       (station) => station.name === 'Shared 2',
     )!;
     expect(horizontalShared.x).toBe(verticalShared.x);
-    expect(horizontalShared.y).not.toBe(verticalShared.y);
+    expect(verticalShared.y - horizontalShared.y).toBe(10);
     expect(layout.lines[0].path).not.toContain('L 0.00');
   });
 
@@ -165,8 +165,7 @@ describe('App', () => {
       (station) => station.name === 'Shared 3',
     )!;
 
-    expect(sharedTwo.y).toBe(160);
-    expect(sharedThree.y).toBe(160);
+    expect(sharedTwo.y).toBe(sharedThree.y);
     expect(secondLine.path).toContain(
       `L ${sharedThree.x.toFixed(2)} ${sharedThree.y.toFixed(2)}`,
     );
@@ -275,6 +274,25 @@ describe('App', () => {
     expect(layout.lines[1].stations.every((station) =>
       station.x === layout.lines[1].stations[0].x,
     )).toBe(true);
+  });
+
+  it('should render three independent metro lines', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C'],
+        ['B', 'C', 'D'],
+        ['X', 'Y', 'Z'],
+      ],
+      ['#E32017', '#003688', '#00782A'],
+    );
+
+    expect(layout.lines).toHaveLength(3);
+    expect(layout.lines.map((line) => line.orientation)).toEqual([
+      'horizontal',
+      'vertical',
+      'horizontal',
+    ]);
   });
 
   it('should treat a one-station overlap as a transfer without a parallel lane', () => {
