@@ -55,4 +55,26 @@ describe('App', () => {
       expect.objectContaining({ name: 'Shared' }),
     ]);
   });
+
+  it('should only mark the ends of a consecutive shared station run', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'Shared 1', 'Shared 2', 'Shared 3', 'Z'],
+        ['Top', 'Shared 1', 'Shared 2', 'Shared 3', 'Bottom'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    expect(layout.lines[1].sharedStationNames).toEqual([
+      'Shared 1',
+      'Shared 2',
+      'Shared 3',
+    ]);
+    expect(layout.transfers.map((transfer) => transfer.name)).toEqual([
+      'Shared 1',
+      'Shared 3',
+    ]);
+  });
 });

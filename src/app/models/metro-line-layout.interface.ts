@@ -5,4 +5,6 @@ export interface MetroLineLayout {
   orientation: 'horizontal' | 'vertical';
   stations: PlacedStation[];
   path: string;
+  sharedStationNames: string[];
+  boundaryStationNames: string[];
 }

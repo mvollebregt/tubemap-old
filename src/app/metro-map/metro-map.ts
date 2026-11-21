@@ -13,4 +13,10 @@ export class MetroMapComponent {
   isTransfer(name: string): boolean {
     return this.layout().transfers.some((transfer) => transfer.name === name);
   }
+
+  isShared(name: string): boolean {
+    return this.layout().lines.filter((line) =>
+      line.stations.some((station) => station.name === name),
+    ).length > 1;
+  }
 }

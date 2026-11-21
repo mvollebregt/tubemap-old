@@ -11,7 +11,7 @@
           stroke-linejoin="round"
         />
         @for (station of line.stations; track $index) {
-          @if (!isTransfer(station.name)) {
+          @if (!isTransfer(station.name) && (!isShared(station.name) || line.orientation === 'horizontal')) {
             <line
               [attr.x1]="station.tick.x1"
               [attr.y1]="station.tick.y1"
