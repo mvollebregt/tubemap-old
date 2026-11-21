@@ -19,4 +19,13 @@ export class MetroMapComponent {
       line.stations.some((station) => station.name === name),
     ).length > 1;
   }
+
+  sharedTickCoordinate(
+    value: number,
+    axis: 'x' | 'y',
+    lineIndex: number,
+    station: { tick: { x1: number; y1: number; x2: number; y2: number }; name: string },
+  ): number {
+    return value;
+  }
 }

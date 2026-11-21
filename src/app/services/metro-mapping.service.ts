@@ -355,11 +355,17 @@ export class MetroMappingService {
             y2: station.y + normalY * 12,
           };
         } else {
+          const labelSideNormalDot =
+            normalX * labelDirection.x + normalY * labelDirection.y;
+          const signedNormalX =
+            labelSideNormalDot >= 0 ? normalX : -normalX;
+          const signedNormalY =
+            labelSideNormalDot >= 0 ? normalY : -normalY;
           station.tick = {
             x1: station.x,
             y1: station.y,
-            x2: station.x + normalX * 12,
-            y2: station.y + normalY * 12,
+            x2: station.x + signedNormalX * 12,
+            y2: station.y + signedNormalY * 12,
           };
         }
       });

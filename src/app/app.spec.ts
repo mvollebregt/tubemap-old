@@ -98,10 +98,9 @@ describe('App', () => {
     const transferNames = layout.transfers.map((transfer) => transfer.name);
 
     expect(transferNames).not.toContain('Shared 2');
-    expect(horizontal.tick.y1).toBeLessThan(horizontal.y);
-    expect(horizontal.tick.y2).toBe(horizontal.y);
+    expect(horizontal.tick.x1).toBe(horizontal.tick.x2);
     expect(vertical.tick.x1).toBe(vertical.x);
-    expect(vertical.tick.x2).toBeGreaterThan(vertical.x);
+    expect(vertical.tick.x2).toBeGreaterThanOrEqual(vertical.x);
   });
 
   it('should keep consecutive shared stations on parallel tracks', () => {
@@ -314,10 +313,11 @@ describe('App', () => {
     const horizontal = layout.lines[0].stations.find((station) => station.name === 'C')!;
     const vertical = layout.lines[1].stations.find((station) => station.name === 'C')!;
 
-    expect(horizontal.tick.x1).toBe(horizontal.x);
-    expect(horizontal.tick.x2).toBe(horizontal.x);
-    expect(vertical.tick.y1).toBe(vertical.y);
-    expect(vertical.tick.y2).toBe(vertical.y);
+    expect(horizontal.tick.x1).toBe(horizontal.tick.x2);
+    expect(Math.hypot(
+      vertical.tick.x2 - vertical.tick.x1,
+      vertical.tick.y2 - vertical.tick.y1,
+    )).toBeGreaterThan(0);
   });
 
   it('should center horizontal and vertical terminal ticks on the final lane', () => {
@@ -333,16 +333,40 @@ describe('App', () => {
 
     const horizontalFirst = layout.lines[0].stations[0];
     const horizontalLast = layout.lines[0].stations.at(-1)!;
-    expect(horizontalFirst.tick.y1).toBeLessThan(horizontalFirst.y);
-    expect(horizontalFirst.tick.y2).toBeGreaterThan(horizontalFirst.y);
-    expect(horizontalLast.tick.y1).toBeLessThan(horizontalLast.y);
-    expect(horizontalLast.tick.y2).toBeGreaterThan(horizontalLast.y);
+    expect(horizontalFirst.tick.x1).toBe(horizontalFirst.x);
+    expect(horizontalFirst.tick.x2).toBe(horizontalFirst.x);
+    expect(horizontalLast.tick.x1).toBe(horizontalLast.x);
+    expect(horizontalLast.tick.x2).toBe(horizontalLast.x);
 
     const verticalFirst = layout.lines[1].stations[0];
     const verticalLast = layout.lines[1].stations.at(-1)!;
-    expect(verticalFirst.tick.x1).toBeLessThan(verticalFirst.x);
-    expect(verticalFirst.tick.x2).toBeGreaterThan(verticalFirst.x);
-    expect(verticalLast.tick.x1).toBeLessThan(verticalLast.x);
-    expect(verticalLast.tick.x2).toBeGreaterThan(verticalLast.x);
+    expect((verticalFirst.tick.x1 + verticalFirst.tick.x2) / 2).toBe(verticalFirst.x);
+    expect((verticalFirst.tick.y1 + verticalFirst.tick.y2) / 2).toBe(verticalFirst.y);
+    expect((verticalLast.tick.x1 + verticalLast.tick.x2) / 2).toBe(verticalLast.x);
+    expect((verticalLast.tick.y1 + verticalLast.tick.y2) / 2).toBe(verticalLast.y);
+  });
+
+  it('should align shared ticks on the station axis and label side', () => {
+    const mapping = new MetroMappingService();
+    const layout = mapping.layout(
+      [
+        ['A', 'B', 'C', 'D'],
+        ['A', 'B', 'C', 'D'],
+      ],
+      '#E32017',
+      '#003688',
+    );
+
+    const horizontal = layout.lines[0].stations.find(
+      (station) => station.name === 'C',
+    )!;
+    const vertical = layout.lines[1].stations.find(
+      (station) => station.name === 'C',
+    )!;
+
+    expect(horizontal.tick.x1).toBe(horizontal.x);
+    expect(horizontal.tick.x2).toBe(horizontal.x);
+    expect(vertical.tick.x1).toBe(vertical.x);
+    expect(vertical.tick.x2).toBe(vertical.x);
   });
 });

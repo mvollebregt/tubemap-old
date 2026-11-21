@@ -12,14 +12,14 @@
         />
       }
 
-      @for (line of layout().lines; track $index) {
+      @for (line of layout().lines; track $index; let lineIndex = $index) {
         @for (station of line.stations; track $index) {
           @if (!isTransfer(station.name)) {
             <line
-              [attr.x1]="station.tick.x1"
-              [attr.y1]="station.tick.y1"
-              [attr.x2]="station.tick.x2"
-              [attr.y2]="station.tick.y2"
+              [attr.x1]="sharedTickCoordinate(station.tick.x1, 'x', lineIndex, station)"
+              [attr.y1]="sharedTickCoordinate(station.tick.y1, 'y', lineIndex, station)"
+              [attr.x2]="sharedTickCoordinate(station.tick.x2, 'x', lineIndex, station)"
+              [attr.y2]="sharedTickCoordinate(station.tick.y2, 'y', lineIndex, station)"
               [attr.stroke]="line.color"
               stroke-width="5"
               stroke-linecap="butt"
@@ -37,7 +37,13 @@
                 [attr.text-anchor]="station.label.anchor"
                 font-weight="400"
               >
-                {{ station.name }}
+                @for (word of station.name.split(' '); track $index) {
+                  @if ($index === 0) {
+                    <tspan [attr.x]="0">{{ word }}</tspan>
+                  } @else {
+                    <tspan [attr.x]="0" dy="16">{{ word }}</tspan>
+                  }
+                }
               </text>
             }
           }
@@ -57,7 +63,13 @@
           [attr.text-anchor]="transfer.label.anchor"
           font-weight="400"
         >
-          {{ transfer.name }}
+          @for (word of transfer.name.split(' '); track $index) {
+            @if ($index === 0) {
+              <tspan [attr.x]="0">{{ word }}</tspan>
+            } @else {
+              <tspan [attr.x]="0" dy="16">{{ word }}</tspan>
+            }
+          }
         </text>
       }
     </svg>
