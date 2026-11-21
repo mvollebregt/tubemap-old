@@ -151,18 +151,6 @@ export class MetroMappingService {
 
       horizontalStations.forEach((station) => {
         station.y = horizontalLaneY;
-        station.tick = sharedNames.includes(station.name)
-          ? this.horizontalStationTick(station.x, station.y, boundaryNames.includes(station.name))
-          : this.horizontalStationTick(station.x, station.y, station.terminus);
-      });
-      verticalStations.forEach((station) => {
-        const shared = sharedNames.includes(station.name);
-        station.tick = this.verticalStationTick(
-          station.x,
-          station.y,
-          station.terminus,
-          shared,
-        );
       });
 
       firstLine.sharedStationNames = sharedNames;
@@ -202,6 +190,7 @@ export class MetroMappingService {
       });
     }
 
+    this.alignStationTicks(lines, transfers);
     this.placeCollisionFreeLabels(lines, transfers);
 
     const allStations = lines.flatMap((line) => line.stations);
@@ -299,6 +288,82 @@ export class MetroMappingService {
       transform: `translate(${this.format(x + 18)} ${this.format(y - 18)})`,
       anchor: 'start' as const,
     };
+  }
+
+  private alignStationTicks(
+    lines: MetroLineLayout[],
+    transfers: TransferStation[],
+  ): void {
+    const transferNames = new Set(transfers.map((transfer) => transfer.name));
+
+    lines.forEach((line) => {
+      line.stations.forEach((station, index) => {
+        if (transferNames.has(station.name)) return;
+
+        const previous = line.stations[index - 1];
+        const next = line.stations[index + 1];
+        let tangentX = 0;
+        let tangentY = 0;
+
+        if (previous) {
+          const dx = station.x - previous.x;
+          const dy = station.y - previous.y;
+          const length = Math.hypot(dx, dy);
+          if (length > 0) {
+            tangentX += dx / length;
+            tangentY += dy / length;
+          }
+        }
+        if (next) {
+          const dx = next.x - station.x;
+          const dy = next.y - station.y;
+          const length = Math.hypot(dx, dy);
+          if (length > 0) {
+            tangentX += dx / length;
+            tangentY += dy / length;
+          }
+        }
+
+        const tangentLength = Math.hypot(tangentX, tangentY);
+        if (tangentLength === 0) {
+          tangentX = line.orientation === 'vertical' ? 0 : 1;
+          tangentY = line.orientation === 'vertical' ? 1 : 0;
+        } else {
+          tangentX /= tangentLength;
+          tangentY /= tangentLength;
+        }
+
+        let normalX = -tangentY;
+        let normalY = tangentX;
+        const labelDirection = line.orientation === 'horizontal'
+          ? { x: 0, y: -1 }
+          : { x: 1, y: 0 };
+        const oppositeNormalDot =
+          -normalX * labelDirection.x - normalY * labelDirection.y;
+        const normalDot =
+          normalX * labelDirection.x + normalY * labelDirection.y;
+        if (oppositeNormalDot > normalDot) {
+          normalX *= -1;
+          normalY *= -1;
+        }
+
+        if (station.terminus) {
+          station.tick = {
+            x1: station.x - normalX * 12,
+            y1: station.y - normalY * 12,
+            x2: station.x + normalX * 12,
+            y2: station.y + normalY * 12,
+          };
+        } else {
+          station.tick = {
+            x1: station.x,
+            y1: station.y,
+            x2: station.x + normalX * 12,
+            y2: station.y + normalY * 12,
+          };
+        }
+      });
+    });
   }
 
   private findOverlapRuns(
