@@ -75,6 +75,15 @@ export class MetroMappingService {
       const sharedName = stationNames.find((name) => masterPositions.has(name));
       const sharedIndex = sharedName ? stationNames.indexOf(sharedName) : -1;
       const anchor = sharedName ? masterPositions.get(sharedName)! : undefined;
+      const horizontalBranchSide =
+        orientation === 'horizontal' && sharedIndex === 0 && anchor
+          ? this.horizontalBranchSide(
+              stationNames.slice(1).filter((name) => !masterPositions.has(name)),
+              anchor,
+              firstSpacing,
+              basePositions,
+            )
+          : -1;
 
       const stations = stationNames.map((name, stationIndex) => {
         if (masterPositions.has(name)) {
@@ -109,7 +118,7 @@ export class MetroMappingService {
           }
 
           const side = sharedIndex === 0 && stationIndex > 0
-            ? -1
+            ? horizontalBranchSide
             : stationIndex > sharedIndex
               ? 1
               : -1;
@@ -150,6 +159,22 @@ export class MetroMappingService {
 
     const overlapRuns = this.findOverlapRuns(names);
     this.placeParallelRuns(basePositions, overlapRuns);
+    basePositions.forEach((stations, lineIndex) => {
+      if (lineIndex === 0) return;
+      const startsInParallelRun = overlapRunsEarly.some((run) =>
+        run.names.length >= 2 &&
+        run.names.includes(names[lineIndex][0]),
+      );
+      const orientation = lineIndex > 1 && startsInParallelRun
+        ? 'vertical'
+        : this.orientationForLine(lineIndex);
+      if (orientation !== 'horizontal') return;
+      this.avoidStationCollisions(
+        stations,
+        basePositions.slice(0, lineIndex),
+        new Set(this.sharedNamesForLine(names, lineIndex)),
+      );
+    });
 
     const lines: MetroLineLayout[] = names.map((stationNames, lineIndex) => {
       const startsInParallelRun = overlapRunsEarly.some((run) =>
@@ -173,17 +198,21 @@ export class MetroMappingService {
         color: colors[lineIndex] ?? this.fallbackColor(lineIndex),
         orientation,
         stations,
-        path: this.buildPath(stations),
+        path: '',
         sharedStationNames: this.sharedNamesForLine(names, lineIndex),
         boundaryStationNames: this.boundaryNamesForLine(names, overlapRuns, lineIndex),
       };
     });
 
+    const allStations = lines.flatMap((line) => line.stations);
+    lines.forEach((line) => {
+      line.path = this.buildPath(line.stations, allStations);
+    });
+
     const transfers = this.findTransfers(names, lines, overlapRuns);
-    this.alignStationTicks(lines, transfers);
+    this.alignStationTicks(lines, transfers, allStations);
     this.placeLabels(lines, transfers);
 
-    const allStations = lines.flatMap((line) => line.stations);
     const xs = allStations.map((station) => station.x);
     const ys = allStations.map((station) => station.y);
     const minX = Math.min(...xs) - 72;
@@ -198,6 +227,91 @@ export class MetroMappingService {
       lines,
       transfers,
     };
+  }
+
+  private horizontalBranchSide(
+    branchNames: string[],
+    anchor: Point,
+    spacing: number,
+    occupiedLines: Array<Array<{ name: string; point: Point }>>,
+  ): -1 | 1 {
+    const collides = (side: -1 | 1, index: number, name: string): boolean => {
+        const candidate = {
+          x: anchor.x + side * (index + 1) * spacing,
+          y: anchor.y,
+        };
+        return occupiedLines.some((line) =>
+          line.some((station) =>
+            station.name !== name &&
+            this.isSamePoint(station.point, candidate),
+          ),
+        );
+    };
+
+    for (let index = 0; index < branchNames.length; index++) {
+      const collidesLeft = collides(-1, index, branchNames[index]);
+      const collidesRight = collides(1, index, branchNames[index]);
+      if (collidesLeft !== collidesRight) return collidesLeft ? 1 : -1;
+    }
+    return -1;
+  }
+
+  private avoidStationCollisions(
+    stations: Array<{ name: string; point: Point }>,
+    occupiedLines: Array<Array<{ name: string; point: Point }>>,
+    sharedNames: Set<string>,
+  ): void {
+    stations.forEach((station, index) => {
+      if (index === 0 || sharedNames.has(station.name)) return;
+
+      const previous = stations[index - 1];
+      const distance = Math.hypot(
+        station.point.x - previous.point.x,
+        station.point.y - previous.point.y,
+      );
+      if (distance === 0) return;
+
+      const lineBeforeStation = stations.slice(0, index);
+      const occupied = [...occupiedLines, lineBeforeStation];
+      if (!this.isPointOccupied(station.point, occupied)) return;
+
+      const horizontal = Math.abs(station.point.x - previous.point.x) >=
+        Math.abs(station.point.y - previous.point.y);
+      const direction = horizontal
+        ? { x: Math.sign(station.point.x - previous.point.x) || 1, y: 0 }
+        : { x: 0, y: Math.sign(station.point.y - previous.point.y) || 1 };
+      const alternatives = horizontal
+        ? [
+            { x: -direction.x, y: 0 },
+            { x: 0, y: -1 },
+            { x: 0, y: 1 },
+          ]
+        : [
+            { x: 0, y: -direction.y },
+            { x: 1, y: 0 },
+            { x: -1, y: 0 },
+          ];
+      const replacement = alternatives
+        .map((offset) => ({
+          x: previous.point.x + offset.x * distance,
+          y: previous.point.y + offset.y * distance,
+        }))
+        .find((candidate) => !this.isPointOccupied(candidate, occupied));
+
+      if (replacement) station.point = replacement;
+    });
+  }
+
+  private isPointOccupied(
+    point: Point,
+    lines: Array<Array<{ name: string; point: Point }>>,
+  ): boolean {
+    return lines.some((line) =>
+      line.some((station) => this.isSamePoint(station.point, point)) ||
+      line.slice(1).some((station, index) =>
+        this.isPointStrictlyOnSegment(point, line[index].point, station.point),
+      ),
+    );
   }
 
   private orientationForLine(lineIndex: number): 'horizontal' | 'vertical' {
@@ -324,15 +438,17 @@ export class MetroMappingService {
     });
   }
 
-  private buildPath(stations: PlacedStation[]): string {
+  private buildPath(
+    stations: PlacedStation[],
+    allStations: PlacedStation[] = stations,
+  ): string {
     if (stations.length === 0) return '';
-    const allStationPoints = stations;
     let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
 
     for (let index = 1; index < stations.length; index++) {
       const from = stations[index - 1];
       const to = stations[index];
-      const routePoints = this.routeSegment(from, to, allStationPoints);
+      const routePoints = this.routeSegment(from, to, allStations);
       routePoints.forEach((point) => {
         path += ` L ${this.format(point.x)} ${this.format(point.y)}`;
       });
@@ -347,26 +463,55 @@ export class MetroMappingService {
   ): Point[] {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) {
+    if (
+      (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) &&
+      !this.routeCrossesStation(from, [to], forbiddenStations)
+    ) {
       return [to];
     }
 
     const horizontalFirst = { x: to.x, y: from.y };
     const verticalFirst = { x: from.x, y: to.y };
-    const route = Math.abs(dx) >= Math.abs(dy)
-      ? [horizontalFirst, to]
-      : [verticalFirst, to];
+    const routes = Math.abs(dx) >= Math.abs(dy)
+      ? [[horizontalFirst, to], [verticalFirst, to]]
+      : [[verticalFirst, to], [horizontalFirst, to]];
+    return routes.find((route) =>
+      !this.routeCrossesStation(from, route, forbiddenStations),
+    ) ?? routes[0];
+  }
 
-    const routeCrossesForbidden = route.some((point) =>
-      forbiddenStations.some((station) =>
-        station !== from &&
-        station !== to &&
-        this.isSamePoint(station, point),
-      ),
-    );
-    return routeCrossesForbidden
-      ? [{ x: from.x, y: to.y }, to]
-      : route;
+  private routeCrossesStation(
+    from: Point,
+    route: Point[],
+    forbiddenStations: Point[],
+  ): boolean {
+    const to = route[route.length - 1];
+    const points = [from, ...route];
+    return forbiddenStations.some((station) => {
+      if (this.isSamePoint(station, from) || this.isSamePoint(station, to)) {
+        return false;
+      }
+      if (route.slice(0, -1).some((point) => this.isSamePoint(station, point))) {
+        return true;
+      }
+      return points.slice(1).some((end, index) =>
+        this.isPointStrictlyOnSegment(station, points[index], end),
+      );
+    });
+  }
+
+  private isPointStrictlyOnSegment(
+    point: Point,
+    start: Point,
+    end: Point,
+  ): boolean {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const cross = (point.x - start.x) * dy - (point.y - start.y) * dx;
+    if (Math.abs(cross) > 0.01) return false;
+    const dot = (point.x - start.x) * dx + (point.y - start.y) * dy;
+    const lengthSquared = dx * dx + dy * dy;
+    return dot > 0.01 && dot < lengthSquared - 0.01;
   }
 
   private isSamePoint(a: Point, b: Point): boolean {
@@ -376,6 +521,7 @@ export class MetroMappingService {
   private alignStationTicks(
     lines: MetroLineLayout[],
     transfers: TransferStation[],
+    allStations: PlacedStation[],
   ): void {
     const transferNames = new Set(transfers.map((transfer) => transfer.name));
 
@@ -384,7 +530,12 @@ export class MetroMappingService {
         if (transferNames.has(station.name)) return;
         const previous = line.stations[index - 1];
         const next = line.stations[index + 1];
-        const tangent = this.tangentAtStation(previous, station, next);
+        const tangent = this.tangentAtStation(
+          previous,
+          station,
+          next,
+          allStations,
+        );
 
         let normalX = -tangent.y;
         let normalY = tangent.x;
@@ -417,12 +568,26 @@ export class MetroMappingService {
     previous: PlacedStation | undefined,
     station: PlacedStation,
     next: PlacedStation | undefined,
+    allStations: PlacedStation[],
   ): Point {
     let x = 0;
     let y = 0;
     let fallback: Point | undefined;
-    [previous, next].forEach((neighbor) => {
-      if (!neighbor) return;
+    const neighbors: Point[] = [];
+    if (previous) {
+      const incomingRoute = this.routeSegment(previous, station, allStations);
+      neighbors.push(
+        incomingRoute.length > 1
+          ? incomingRoute[incomingRoute.length - 2]
+          : previous,
+      );
+    }
+    if (next) {
+      const outgoingRoute = this.routeSegment(station, next, allStations);
+      neighbors.push(outgoingRoute[0] ?? next);
+    }
+
+    neighbors.forEach((neighbor) => {
       const dx = neighbor.x - station.x;
       const dy = neighbor.y - station.y;
       const length = Math.hypot(dx, dy);
