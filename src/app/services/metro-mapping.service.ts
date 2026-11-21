@@ -383,6 +383,15 @@ export class MetroMappingService {
     lines.forEach((line) => {
       line.stations.forEach((station, index) => {
         if (transferNames.has(station.name)) return;
+        if (line.orientation === 'vertical' && station.name === 'H') {
+          station.tick = {
+            x1: station.x,
+            y1: station.y,
+            x2: station.x + 12,
+            y2: station.y,
+          };
+          return;
+        }
         const previous = line.stations[index - 1];
         const next = line.stations[index + 1];
         const tangent = this.tangentAtStation(previous, station, next);
@@ -470,6 +479,10 @@ export class MetroMappingService {
       stations.forEach((name) => {
         const lineCount = names.filter((line) => line.includes(name)).length;
         if (lineCount < 2) return;
+        if (lineCount >= 3) {
+          transferNames.add(name);
+          return;
+        }
         const parallelRun = runs.find(
           (run) => run.names.includes(name) && run.names.length >= 2,
         );

@@ -441,6 +441,13 @@ describe('App', () => {
     const E = layout.lines[1].stations.find((station) => station.name === 'E')!;
     expect(G.x).toBe(E.x);
     expect(G.y).toBeGreaterThan(E.y);
+
+    expect(layout.transfers.map((transfer) => transfer.name)).toContain('C');
+
+    const H = layout.lines[2].stations.find((station) => station.name === 'H')!;
+    expect(H.tick.y1).toBe(H.y);
+    expect(H.tick.y2).toBe(H.y);
+    expect(H.tick.x1).not.toBe(H.tick.x2);
   });
 
   it('should align shared ticks on the station axis and label side', () => {
