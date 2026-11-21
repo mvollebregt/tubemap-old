@@ -1,0 +1,74 @@
+:host {
+  display: block;
+  min-height: 0;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  padding: 1.5rem;
+  background: #0b1b52;
+  color: #eef1fb;
+  min-height: 0;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: #b4bde0;
+  font-size: 0.9rem;
+}
+
+textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  padding: 0.75rem;
+  border: 1px solid #3a4a8c;
+  border-radius: 4px;
+  background: #07123a;
+  color: #fff;
+  font: 15px/1.6 ui-monospace, 'Cascadia Code', Menlo, monospace;
+}
+
+textarea:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid #ffd329;
+  outline-offset: 2px;
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #b4bde0;
+}
+
+select,
+input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #3a4a8c;
+  border-radius: 4px;
+  background: #07123a;
+  color: #fff;
+  font: inherit;
+}
+
+input {
+  width: 6rem;
+}
