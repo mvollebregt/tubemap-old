@@ -210,7 +210,7 @@ export class MetroMappingService {
     });
 
     const transfers = this.findTransfers(names, lines, overlapRuns);
-    this.alignStationTicks(lines, transfers, allStations);
+    this.alignStationTicks(lines, transfers);
     this.placeLabels(lines, transfers);
 
     const xs = allStations.map((station) => station.x);
@@ -444,14 +444,24 @@ export class MetroMappingService {
   ): string {
     if (stations.length === 0) return '';
     let path = `M ${this.format(stations[0].x)} ${this.format(stations[0].y)}`;
+    let incomingDirection: Point | undefined;
 
     for (let index = 1; index < stations.length; index++) {
       const from = stations[index - 1];
       const to = stations[index];
-      const routePoints = this.routeSegment(from, to, allStations);
+      const routePoints = this.routeSegment(
+        from,
+        to,
+        allStations,
+        incomingDirection,
+      );
       routePoints.forEach((point) => {
         path += ` L ${this.format(point.x)} ${this.format(point.y)}`;
       });
+      const previous = routePoints.length > 1
+        ? routePoints[routePoints.length - 2]
+        : from;
+      incomingDirection = this.directionBetween(previous, to);
     }
     return path;
   }
@@ -460,24 +470,115 @@ export class MetroMappingService {
     from: { x: number; y: number },
     to: { x: number; y: number },
     forbiddenStations: Point[],
+    incomingDirection?: Point,
   ): Point[] {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    if (
-      (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) &&
-      !this.routeCrossesStation(from, [to], forbiddenStations)
-    ) {
-      return [to];
-    }
-
     const horizontalFirst = { x: to.x, y: from.y };
     const verticalFirst = { x: from.x, y: to.y };
-    const routes = Math.abs(dx) >= Math.abs(dy)
+    const routes: Point[][] = [];
+    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) {
+      routes.push([to]);
+    }
+
+    const orthogonalRoutes = Math.abs(dx) >= Math.abs(dy)
       ? [[horizontalFirst, to], [verticalFirst, to]]
       : [[verticalFirst, to], [horizontalFirst, to]];
-    return routes.find((route) =>
-      !this.routeCrossesStation(from, route, forbiddenStations),
-    ) ?? routes[0];
+    routes.push(...orthogonalRoutes);
+
+    if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) {
+      const diagonalLength = Math.min(Math.abs(dx), Math.abs(dy));
+      const diagonalPoint = {
+        x: from.x + Math.sign(dx) * diagonalLength,
+        y: from.y + Math.sign(dy) * diagonalLength,
+      };
+      routes.push([diagonalPoint, to]);
+
+      const axisPoint = Math.abs(dx) > Math.abs(dy)
+        ? {
+            x: from.x + Math.sign(dx) * (Math.abs(dx) - diagonalLength),
+            y: from.y,
+          }
+        : {
+            x: from.x,
+            y: from.y + Math.sign(dy) * (Math.abs(dy) - diagonalLength),
+          };
+      routes.push([axisPoint, to]);
+    }
+
+    const validRoutes = routes
+      .map((route) => this.compactRoute(from, route))
+      .filter((route) =>
+        !this.routeCrossesStation(from, route, forbiddenStations),
+      );
+    if (validRoutes.length === 0) {
+      return this.compactRoute(from, routes[0]);
+    }
+    if (!incomingDirection) return validRoutes[0];
+
+    return validRoutes.reduce((best, route) =>
+      this.compareRouteScores(
+        this.routeScore(from, route, incomingDirection),
+        this.routeScore(from, best, incomingDirection),
+      ) < 0
+        ? route
+        : best,
+    );
+  }
+
+  private compactRoute(from: Point, route: Point[]): Point[] {
+    const compact: Point[] = [];
+    let previous = from;
+    route.forEach((point) => {
+      if (this.isSamePoint(previous, point)) return;
+      compact.push(point);
+      previous = point;
+    });
+    return compact.length > 0
+      ? compact
+      : [route[route.length - 1]];
+  }
+
+  private routeScore(
+    from: Point,
+    route: Point[],
+    incomingDirection: Point,
+  ): { rightAngleBends: number; totalBends: number } {
+    let previousDirection = incomingDirection;
+    let rightAngleBends = 0;
+    let totalBends = 0;
+    let previous = from;
+    route.forEach((point) => {
+      const direction = this.directionBetween(previous, point);
+      const dot = previousDirection.x * direction.x +
+        previousDirection.y * direction.y;
+      if (dot < 0.999) {
+        totalBends++;
+        if (Math.abs(dot) <= 0.01) {
+          rightAngleBends++;
+        }
+      }
+      previousDirection = direction;
+      previous = point;
+    });
+    return { rightAngleBends, totalBends };
+  }
+
+  private compareRouteScores(
+    first: { rightAngleBends: number; totalBends: number },
+    second: { rightAngleBends: number; totalBends: number },
+  ): number {
+    return first.totalBends - second.totalBends ||
+      first.rightAngleBends - second.rightAngleBends;
+  }
+
+  private directionBetween(from: Point, to: Point): Point {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    return length === 0
+      ? { x: 0, y: 0 }
+      : { x: dx / length, y: dy / length };
   }
 
   private routeCrossesStation(
@@ -521,21 +622,58 @@ export class MetroMappingService {
   private alignStationTicks(
     lines: MetroLineLayout[],
     transfers: TransferStation[],
-    allStations: PlacedStation[],
   ): void {
     const transferNames = new Set(transfers.map((transfer) => transfer.name));
 
     lines.forEach((line) => {
-      line.stations.forEach((station, index) => {
-        if (transferNames.has(station.name)) return;
-        const previous = line.stations[index - 1];
-        const next = line.stations[index + 1];
-        const tangent = this.tangentAtStation(
-          previous,
+      const pathPoints = this.pathPoints(line.path);
+      const stationPathIndices = this.stationPathIndices(line.stations, pathPoints);
+      const stationByPathIndex = new Map(
+        stationPathIndices.map((pathIndex, index) => [
+          pathIndex,
+          line.stations[index],
+        ]),
+      );
+      const orderedStations = line.stations
+        .map((station, index) => ({
           station,
-          next,
-          allStations,
-        );
+          pathIndex: stationPathIndices[index],
+        }))
+        .sort(({ pathIndex: first }, { pathIndex: second }) => {
+          const firstCorner = this.isPathCorner(pathPoints, first);
+          const secondCorner = this.isPathCorner(pathPoints, second);
+          return Number(firstCorner) - Number(secondCorner);
+        });
+
+      orderedStations.forEach(({ station, pathIndex }) => {
+        if (transferNames.has(station.name)) return;
+        const previous = pathPoints[pathIndex - 1];
+        const next = pathPoints[pathIndex + 1];
+        const corner = this.isPathCorner(pathPoints, pathIndex);
+        const previousStation = stationByPathIndex.get(pathIndex - 1);
+        const nextStation = stationByPathIndex.get(pathIndex + 1);
+        const previousSupported = corner &&
+          previous &&
+          previousStation &&
+          this.tickIsPerpendicularToSegment(
+            previousStation.tick,
+            previous,
+            station,
+          );
+        const nextSupported = corner &&
+          next &&
+          nextStation &&
+          this.tickIsPerpendicularToSegment(
+            nextStation.tick,
+            station,
+            next,
+          );
+        const tangent = corner
+          ? this.directionBetween(
+              station,
+              previousSupported || !nextSupported ? previous! : next!,
+            )
+          : this.tangentAtStation(previous, station, next);
 
         let normalX = -tangent.y;
         let normalY = tangent.x;
@@ -564,30 +702,66 @@ export class MetroMappingService {
     });
   }
 
+  private isPathCorner(pathPoints: Point[], pathIndex: number): boolean {
+    const previous = pathPoints[pathIndex - 1];
+    const station = pathPoints[pathIndex];
+    const next = pathPoints[pathIndex + 1];
+    if (!previous || !next) return false;
+    const incoming = this.directionBetween(previous, station);
+    const outgoing = this.directionBetween(station, next);
+    return Math.abs(
+      incoming.x * outgoing.y - incoming.y * outgoing.x,
+    ) > 0.01 || incoming.x * outgoing.x + incoming.y * outgoing.y < 0.99;
+  }
+
+  private tickIsPerpendicularToSegment(
+    tick: StationTick,
+    start: Point,
+    end: Point,
+  ): boolean {
+    const tickDirection = this.directionBetween(
+      { x: tick.x1, y: tick.y1 },
+      { x: tick.x2, y: tick.y2 },
+    );
+    const segmentDirection = this.directionBetween(start, end);
+    return Math.abs(
+      tickDirection.x * segmentDirection.x +
+      tickDirection.y * segmentDirection.y,
+    ) < 0.01;
+  }
+
+  private pathPoints(path: string): Point[] {
+    return [...path.matchAll(/(?:M|L)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)]
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+  }
+
+  private stationPathIndices(
+    stations: PlacedStation[],
+    pathPoints: Point[],
+  ): number[] {
+    let searchFrom = 0;
+    return stations.map((station) => {
+      const index = pathPoints.findIndex((point, pointIndex) =>
+        pointIndex >= searchFrom && this.isSamePoint(point, station),
+      );
+      if (index < 0) {
+        throw new Error(`Station "${station.name}" is missing from its line path.`);
+      }
+      searchFrom = index + 1;
+      return index;
+    });
+  }
+
   private tangentAtStation(
-    previous: PlacedStation | undefined,
+    previous: Point | undefined,
     station: PlacedStation,
-    next: PlacedStation | undefined,
-    allStations: PlacedStation[],
+    next: Point | undefined,
   ): Point {
     let x = 0;
     let y = 0;
     let fallback: Point | undefined;
-    const neighbors: Point[] = [];
-    if (previous) {
-      const incomingRoute = this.routeSegment(previous, station, allStations);
-      neighbors.push(
-        incomingRoute.length > 1
-          ? incomingRoute[incomingRoute.length - 2]
-          : previous,
-      );
-    }
-    if (next) {
-      const outgoingRoute = this.routeSegment(station, next, allStations);
-      neighbors.push(outgoingRoute[0] ?? next);
-    }
-
-    neighbors.forEach((neighbor) => {
+    [previous, next].forEach((neighbor) => {
+      if (!neighbor) return;
       const dx = neighbor.x - station.x;
       const dy = neighbor.y - station.y;
       const length = Math.hypot(dx, dy);

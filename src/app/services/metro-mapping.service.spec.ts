@@ -74,6 +74,49 @@ describe('MetroMappingService with multiple lines', () => {
     });
   });
 
+  it('uses a 45-degree segment when it removes a route bend', () => {
+    const layout = new MetroMappingService().layout(
+      [
+        ['A', 'B', 'C', 'D', 'E'],
+        ['R', 'E', 'B', 'C'],
+        ['B', 'P', 'C', 'R'],
+      ],
+      ['#E32017', '#003688', '#FFD300'],
+    );
+
+    const line = layout.lines[2];
+    const c = station(layout, 2, 'C');
+    const r = station(layout, 2, 'R');
+    const points = [
+      ...line.path.matchAll(/(?:M|L)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g),
+    ].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    const cIndex = points.findIndex((point) => point.x === c.x && point.y === c.y);
+    const diagonalElbow = points[cIndex + 1];
+    const dx = diagonalElbow.x - c.x;
+    const dy = diagonalElbow.y - c.y;
+    const directions = points.slice(1).map((point, index) => {
+      const segmentDx = point.x - points[index].x;
+      const segmentDy = point.y - points[index].y;
+      const length = Math.hypot(segmentDx, segmentDy);
+      return { x: segmentDx / length, y: segmentDy / length };
+    });
+    const bendCount = directions.slice(1).filter((direction, index) =>
+      Math.abs(direction.x - directions[index].x) > 0.01 ||
+      Math.abs(direction.y - directions[index].y) > 0.01,
+    ).length;
+    const rightAngleBendCount = directions.slice(1).filter((direction, index) =>
+      Math.abs(
+        direction.x * directions[index].x +
+        direction.y * directions[index].y,
+      ) < 0.01,
+    ).length;
+
+    expect(Math.abs(dx)).toBe(Math.abs(dy));
+    expect(points[cIndex + 2]).toEqual({ x: r.x, y: r.y });
+    expect(bendCount).toBe(2);
+    expect(rightAngleBendCount).toBe(0);
+  });
+
   it('keeps successive overlaps parallel across a four-line chain', () => {
     const layout = new MetroMappingService().layout(
       [
@@ -271,5 +314,22 @@ describe('MetroMappingService with multiple lines', () => {
     expect(fifthLineSegments.some((fifthSegment) =>
       thirdLineSegments.some((thirdSegment) => overlaps(fifthSegment, thirdSegment)),
     )).toBe(false);
+  });
+
+  it('aligns the tick at a bend with the established horizontal segment', () => {
+    const layout = new MetroMappingService().layout(
+      [
+        ['a', 'b', 'c', 'd', 'p', 'h'],
+        ['b', 'e', 'f', 'g'],
+        ['d', 'p', 'h', 'i', 'j'],
+        ['c', '7', '8'],
+        ['8', '0', '9', 'i'],
+      ],
+      ['#E32017', '#003688', '#FFD300', '#00782A', '#7156A5'],
+    );
+
+    const nine = station(layout, 4, '9');
+    expect(nine.tick.x1).toBe(nine.tick.x2);
+    expect(nine.tick.y2).toBeLessThan(nine.tick.y1);
   });
 });
