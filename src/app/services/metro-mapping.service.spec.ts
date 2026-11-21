@@ -332,4 +332,24 @@ describe('MetroMappingService with multiple lines', () => {
     expect(nine.tick.x1).toBe(nine.tick.x2);
     expect(nine.tick.y2).toBeLessThan(nine.tick.y1);
   });
+
+  it('keeps a station after a shared branch station at a distinct location', () => {
+    const layout = new MetroMappingService().layout(
+      [
+        ['Groningen Noord', 'Groningen', 'Kropswolde'],
+        ['Zuidhorn', 'Groningen', 'Kropswolde'],
+        ['Groningen', 'Haren', 'Assen'],
+        ['Haren', 'Viaduct'],
+      ],
+      ['#E32017', '#003688', '#FFD300', '#00782A'],
+    );
+
+    const assen = station(layout, 2, 'Assen');
+    const haren = station(layout, 2, 'Haren');
+    const viaduct = station(layout, 3, 'Viaduct');
+    expect(Math.hypot(assen.x - viaduct.x, assen.y - viaduct.y)).toBeGreaterThan(0);
+    expect(Math.abs(viaduct.x - haren.x)).toBe(
+      Math.abs(viaduct.y - haren.y),
+    );
+  });
 });

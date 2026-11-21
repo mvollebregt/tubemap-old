@@ -168,11 +168,12 @@ export class MetroMappingService {
       const orientation = lineIndex > 1 && startsInParallelRun
         ? 'vertical'
         : this.orientationForLine(lineIndex);
-      if (orientation !== 'horizontal') return;
+      if (orientation === 'vertical' && startsInParallelRun) return;
       this.avoidStationCollisions(
         stations,
         basePositions.slice(0, lineIndex),
         new Set(this.sharedNamesForLine(names, lineIndex)),
+        orientation,
       );
     });
 
@@ -260,6 +261,7 @@ export class MetroMappingService {
     stations: Array<{ name: string; point: Point }>,
     occupiedLines: Array<Array<{ name: string; point: Point }>>,
     sharedNames: Set<string>,
+    orientation: 'horizontal' | 'vertical',
   ): void {
     stations.forEach((station, index) => {
       if (index === 0 || sharedNames.has(station.name)) return;
@@ -273,33 +275,45 @@ export class MetroMappingService {
 
       const lineBeforeStation = stations.slice(0, index);
       const occupied = [...occupiedLines, lineBeforeStation];
-      if (!this.isPointOccupied(station.point, occupied)) return;
+      const collides = orientation === 'horizontal'
+        ? this.isPointOccupied(station.point, occupied)
+        : this.isStationOccupied(station.point, occupied);
+      if (!collides) return;
 
-      const horizontal = Math.abs(station.point.x - previous.point.x) >=
-        Math.abs(station.point.y - previous.point.y);
-      const direction = horizontal
+      const direction = orientation === 'horizontal'
         ? { x: Math.sign(station.point.x - previous.point.x) || 1, y: 0 }
         : { x: 0, y: Math.sign(station.point.y - previous.point.y) || 1 };
-      const alternatives = horizontal
+      const alternatives = orientation === 'horizontal'
         ? [
-            { x: -direction.x, y: 0 },
-            { x: 0, y: -1 },
-            { x: 0, y: 1 },
+            { x: -direction.x * distance, y: 0 },
+            { x: 0, y: -distance },
+            { x: 0, y: distance },
           ]
         : [
-            { x: 0, y: -direction.y },
-            { x: 1, y: 0 },
-            { x: -1, y: 0 },
+            { x: distance, y: direction.y * distance },
+            { x: -distance, y: direction.y * distance },
+            { x: distance, y: 0 },
+            { x: -distance, y: 0 },
+            { x: 0, y: -direction.y * distance },
           ];
       const replacement = alternatives
-        .map((offset) => ({
-          x: previous.point.x + offset.x * distance,
-          y: previous.point.y + offset.y * distance,
+        .map((delta) => ({
+          x: previous.point.x + delta.x,
+          y: previous.point.y + delta.y,
         }))
         .find((candidate) => !this.isPointOccupied(candidate, occupied));
 
       if (replacement) station.point = replacement;
     });
+  }
+
+  private isStationOccupied(
+    point: Point,
+    lines: Array<Array<{ name: string; point: Point }>>,
+  ): boolean {
+    return lines.some((line) =>
+      line.some((station) => this.isSamePoint(station.point, point)),
+    );
   }
 
   private isPointOccupied(
